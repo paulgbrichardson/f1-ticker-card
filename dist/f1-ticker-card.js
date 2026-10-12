@@ -1,11 +1,10 @@
 /**
  * F1 Live Race Control Ticker Card (f1-ticker-card)
- * Version: 1.4.0
+ * Version: 1.5.0
  * 
- * Hardware-accelerated continuous 60fps requestAnimationFrame marquee ticker.
- * Natively integrates official Formula 1 typography ('Formula1 Display' and 'Formula1 Wide')
- * matching the Nicxe/f1_sensor design system with dynamic track status colors and intelligent
- * replay vs. live session status badges.
+ * Hardware-accelerated continuous 60fps single-message conveyor ticker.
+ * Natively matches Nicxe/f1_sensor design system with authentic Formula 1 typography,
+ * fully-rounded capsule status pills, theme-matched color variables, and graceful incoming message loading.
  */
 
 // Automated font loader matching Nicxe/f1_sensor
@@ -63,16 +62,16 @@ async function ensureF1Fonts() {
 
 // Kick off font loading
 ensureF1Fonts();
+
 class F1TickerCard extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: 'open' });
     this._scrollPos = 0;
-    this._groupWidth = 0;
     this._lastTime = null;
     this._animFrame = null;
     this._isPaused = false;
-    this._lastSignature = null;
+    this._activeItems = new Map();
     this._tick = this._tick.bind(this);
   }
 
@@ -158,6 +157,16 @@ class F1TickerCard extends HTMLElement {
         font-size: 1rem;
         line-height: 1.5;
         box-sizing: border-box;
+
+        /* F1 Sensor Theme Colors matching Nicxe/f1_sensor */
+        --f1-status-info: #38bdf8;
+        --f1-status-warning: #f59e0b;
+        --f1-status-yellow: #ffd60a;
+        --f1-status-success: #34c759;
+        --f1-status-danger: #ff3b30;
+        --f1-status-orange: #ff9500;
+        --f1-status-purple: #a855f7;
+        --f1-status-neutral: #94a3b8;
       }
       * {
         box-sizing: border-box;
@@ -177,7 +186,7 @@ class F1TickerCard extends HTMLElement {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 9px 14px;
+        padding: 8px 14px;
         background: var(--f1-panel, rgba(127, 127, 127, 0.07));
         border-bottom: 1px solid var(--f1-divider, rgba(127, 127, 127, 0.25));
       }
@@ -200,7 +209,7 @@ class F1TickerCard extends HTMLElement {
       }
       .title-text {
         font-family: 'Formula1 Wide', 'Formula1 Display', 'F1 Barlow Condensed', sans-serif !important;
-        font-size: 0.96rem;
+        font-size: 0.95rem;
         font-weight: 700;
         letter-spacing: 0.04em;
         color: var(--f1-text, var(--primary-text-color, #e9edf3));
@@ -208,47 +217,43 @@ class F1TickerCard extends HTMLElement {
       }
       .subtitle-text {
         font-family: 'Formula1 Display', 'Formula1 Wide', 'F1 Barlow Condensed', sans-serif !important;
-        font-size: 0.76rem;
+        font-size: 0.75rem;
         font-weight: 600;
         letter-spacing: 0.04em;
         color: var(--f1-muted, var(--secondary-text-color, #b9c1ce));
         text-transform: uppercase;
       }
 
-      /* Official F1 Weekend Hub standard status chips */
+      /* Official F1 Status Pills matching Nicxe/f1_sensor rc-status-pill / ls-status-pill */
       .status-pill {
         display: inline-flex;
         align-items: center;
+        justify-content: center;
         gap: 6px;
-        font-family: 'Formula1 Wide', 'Formula1 Display', 'F1 Barlow Condensed', sans-serif !important;
-        font-size: 0.72rem;
+        min-height: 24px;
+        padding: 3px 12px;
+        border-radius: 999px; /* Round pill corners */
+        font-family: 'Formula1 Wide', 'Formula1 Display', sans-serif !important;
+        font-size: 0.68rem;
         font-weight: 700;
         letter-spacing: 0.05em;
         text-transform: uppercase;
-        padding: 2px 8px;
-        border: 1px solid currentColor;
-        border-radius: 5px;
+        white-space: nowrap;
+        border: 1px solid color-mix(in srgb, currentColor 46%, transparent);
+        background: color-mix(in srgb, currentColor 14%, transparent);
         transition: all 0.25s ease;
       }
-      .status-live {
-        color: #d93636;
-        background: rgba(217, 54, 54, 0.16);
-        border-color: rgba(217, 54, 54, 0.4);
-      }
-      .status-replay {
-        color: #3978d5;
-        background: rgba(57, 120, 213, 0.16);
-        border-color: rgba(57, 120, 213, 0.4);
+      .status-replay-running {
+        color: #34c759; /* Green playing state matching f1_sensor rc-status-pill.playing */
       }
       .status-replay-paused {
-        color: #f6d65c;
-        background: rgba(246, 214, 92, 0.14);
-        border-color: rgba(246, 214, 92, 0.4);
+        color: #f59e0b; /* Amber paused state matching f1_sensor rc-status-pill.paused */
+      }
+      .status-live {
+        color: #ff3b30; /* Red live session indicator */
       }
       .status-before {
-        color: #75dc94;
-        background: rgba(117, 220, 148, 0.14);
-        border-color: rgba(117, 220, 148, 0.4);
+        color: #38bdf8; /* Blue standby/before state matching f1_sensor ready */
       }
       .pulse-dot {
         width: 6px;
@@ -263,7 +268,7 @@ class F1TickerCard extends HTMLElement {
         50% { opacity: 0.35; transform: scale(0.8); }
       }
 
-      /* Continuous JS requestAnimationFrame Marquee Viewport */
+      /* Single-Message Conveyor Marquee Viewport */
       .ticker-container {
         position: relative;
         overflow: hidden;
@@ -277,88 +282,99 @@ class F1TickerCard extends HTMLElement {
       }
       .ticker-track {
         display: flex;
+        align-items: center;
         white-space: nowrap;
         will-change: transform;
         transform: translate3d(0, 0, 0);
       }
-      .ticker-group {
+      .ticker-unit {
         display: inline-flex;
         align-items: center;
         flex-shrink: 0;
+      }
+      .ticker-spacer {
+        display: inline-block;
+        flex-shrink: 0;
+        height: 1px;
       }
       .ticker-item {
         display: inline-flex;
         align-items: center;
         gap: 8px;
-        font-family: 'Formula1 Display', 'Formula1 Wide', 'F1 Barlow Condensed', sans-serif !important;
+        font-family: 'Formula1 Display', 'Formula1 Wide', sans-serif !important;
         font-size: 0.92rem;
         font-weight: 500;
         letter-spacing: 0.03em;
         color: var(--f1-text, var(--primary-text-color, #e9edf3));
+        white-space: nowrap;
       }
 
-      /* F1 Weekend Hub standard chip tags */
+      /* Category Tags matching Nicxe/f1_sensor capsule pill standard */
       .tag {
-        font-family: 'Formula1 Wide', 'Formula1 Display', 'F1 Barlow Condensed', sans-serif !important;
-        font-size: 0.68rem;
+        font-family: 'Formula1 Wide', 'Formula1 Display', sans-serif !important;
+        font-size: 0.65rem;
         font-weight: 700;
         letter-spacing: 0.05em;
         text-transform: uppercase;
-        padding: 1px 6px;
-        border: 1px solid currentColor;
-        border-radius: 4px;
+        padding: 2px 9px;
+        border-radius: 999px; /* Fully rounded capsule pill corners */
+        border: 1px solid color-mix(in srgb, currentColor 46%, transparent);
+        background: color-mix(in srgb, currentColor 14%, transparent);
         display: inline-flex;
         align-items: center;
-        gap: 4px;
+        gap: 5px;
+        white-space: nowrap;
       }
 
-      /* Dynamic Track Status Colors */
+      /* Color-matched tags from f1_sensor design system */
+      .tag-rc {
+        color: #ff3b30;
+      }
       .tag-track-clear {
-        color: #75dc94;
-        background: rgba(117, 220, 148, 0.16);
-        border-color: rgba(117, 220, 148, 0.5);
+        color: #34c759;
       }
       .tag-track-yellow {
-        color: #f0c632;
-        background: rgba(240, 198, 50, 0.2);
-        border-color: rgba(240, 198, 50, 0.6);
+        color: #ffd60a;
       }
       .tag-track-sc, .tag-track-vsc {
-        color: #f0c632;
-        background: rgba(240, 198, 50, 0.22);
-        border-color: rgba(240, 198, 50, 0.7);
-      }
-      .tag-track-blue {
-        color: #3978d5;
-        background: rgba(57, 120, 213, 0.16);
-        border-color: rgba(57, 120, 213, 0.5);
+        color: #ff9500;
       }
       .tag-track-red {
-        color: #ef4444;
-        background: rgba(239, 68, 68, 0.28);
-        border-color: #ef4444;
+        color: #ff3b30;
         animation: pulse-red 1.2s infinite ease-in-out;
       }
       @keyframes pulse-red {
-        0%, 100% { box-shadow: 0 0 4px rgba(239, 68, 68, 0.3); }
-        50% { box-shadow: 0 0 10px rgba(239, 68, 68, 0.7); }
+        0%, 100% { box-shadow: 0 0 4px rgba(255, 59, 48, 0.3); }
+        50% { box-shadow: 0 0 10px rgba(255, 59, 48, 0.7); }
       }
-
-      /* Categorized Chips */
-      .tag-rc { color: #d93636; background: rgba(217, 54, 54, 0.14); }
-      .tag-fastest { color: #c59aff; background: rgba(197, 154, 255, 0.14); }
-      .tag-battle { color: #f6d65c; background: rgba(246, 214, 92, 0.14); }
-      .tag-pit { color: #56aaff; background: rgba(86, 170, 255, 0.14); }
-      .tag-weather { color: #3978d5; background: rgba(57, 120, 213, 0.14); }
-      .tag-lap { color: var(--f1-muted, #b9c1ce); background: rgba(127, 127, 127, 0.14); }
-      .tag-fia { color: var(--f1-muted, #b9c1ce); background: rgba(127, 127, 127, 0.14); }
-      .tag-neutral { color: #75dc94; background: rgba(117, 220, 148, 0.14); }
+      .tag-track-blue {
+        color: #38bdf8;
+      }
+      .tag-fastest {
+        color: #a855f7;
+      }
+      .tag-battle {
+        color: #f59e0b;
+      }
+      .tag-pit {
+        color: #38bdf8;
+      }
+      .tag-neutral {
+        color: #34c759;
+      }
+      .tag-weather {
+        color: #38bdf8;
+      }
+      .tag-fia, .tag-lap {
+        color: #94a3b8;
+      }
 
       .separator {
         color: var(--f1-divider, rgba(127, 127, 127, 0.35));
         font-size: 0.65rem;
         margin: 0 16px;
         user-select: none;
+        flex-shrink: 0;
       }
     `;
 
@@ -376,10 +392,7 @@ class F1TickerCard extends HTMLElement {
           </div>
         </div>
         <div class="ticker-container" id="ticker-box">
-          <div class="ticker-track" id="ticker-track">
-            <div class="ticker-group" id="content-1"></div>
-            <div class="ticker-group" id="content-2"></div>
-          </div>
+          <div class="ticker-track" id="ticker-track"></div>
         </div>
       </ha-card>
     `;
@@ -398,7 +411,6 @@ class F1TickerCard extends HTMLElement {
       }, { passive: true });
     }
 
-    this._lastSignature = null;
     this._trackElem = this.shadowRoot.getElementById('ticker-track');
 
     if (!this._animFrame) {
@@ -412,19 +424,171 @@ class F1TickerCard extends HTMLElement {
     const dt = Math.min(0.1, (now - this._lastTime) / 1000);
     this._lastTime = now;
 
-    if (!document.hidden && !this._isPaused && this._groupWidth > 0 && this._trackElem) {
+    if (!document.hidden && !this._isPaused && this._trackElem && this._trackElem.children.length > 0) {
       const speed = parseInt(this._config?.speed, 10) || 35;
-      this._scrollPos -= speed * dt;
+      this._scrollPos += speed * dt;
 
-      // When one complete group scrolls off the screen, wrap around seamlessly
-      if (this._scrollPos <= -this._groupWidth) {
-        this._scrollPos += this._groupWidth;
+      // Handle items as they exit the left edge of the screen
+      while (this._trackElem.firstElementChild) {
+        const firstChild = this._trackElem.firstElementChild;
+        const itemWidth = firstChild.getBoundingClientRect().width;
+        if (this._scrollPos >= itemWidth && itemWidth > 0) {
+          this._scrollPos -= itemWidth;
+          this._trackElem.removeChild(firstChild);
+
+          const id = firstChild.getAttribute('data-id');
+          if (id === 'spacer') {
+            // Spacer exited: re-append to the end if still needed
+            if (this._needsSpacer()) {
+              this._trackElem.appendChild(firstChild);
+            }
+            continue;
+          }
+
+          // If still in active items feed, recycle to the entrance (right side)
+          if (id && this._activeItems.has(id)) {
+            const latest = this._activeItems.get(id);
+            this._updateItemElement(firstChild, latest);
+
+            // Re-insert: if a spacer exists, insert before spacer so spacer stays at tail
+            const spacer = this._trackElem.querySelector('.ticker-spacer');
+            if (spacer) {
+              this._trackElem.insertBefore(firstChild, spacer);
+            } else {
+              this._trackElem.appendChild(firstChild);
+            }
+          }
+        } else {
+          break;
+        }
       }
 
-      this._trackElem.style.transform = `translate3d(${this._scrollPos.toFixed(2)}px, 0, 0)`;
+      this._trackElem.style.transform = `translate3d(-${this._scrollPos.toFixed(2)}px, 0, 0)`;
     }
 
     this._animFrame = requestAnimationFrame(this._tick);
+  }
+
+  _needsSpacer() {
+    if (!this._trackElem) return false;
+    const box = this.shadowRoot.getElementById('ticker-box');
+    const containerWidth = (box && box.offsetWidth) ? box.offsetWidth : 1200;
+    
+    let totalItemsWidth = 0;
+    Array.from(this._trackElem.querySelectorAll('.ticker-unit')).forEach(u => {
+      totalItemsWidth += u.getBoundingClientRect().width;
+    });
+
+    return totalItemsWidth < containerWidth;
+  }
+
+  _updateSpacer() {
+    if (!this._trackElem) return;
+    const box = this.shadowRoot.getElementById('ticker-box');
+    const containerWidth = (box && box.offsetWidth) ? box.offsetWidth : 1200;
+
+    let totalItemsWidth = 0;
+    let minItemWidth = 200;
+    const units = Array.from(this._trackElem.querySelectorAll('.ticker-unit'));
+    units.forEach(u => {
+      const w = u.getBoundingClientRect().width;
+      totalItemsWidth += w;
+      if (w > 0 && w < minItemWidth) minItemWidth = w;
+    });
+
+    let spacer = this._trackElem.querySelector('.ticker-spacer');
+    if (totalItemsWidth < containerWidth) {
+      const neededSpacerWidth = Math.max(120, containerWidth - (totalItemsWidth - minItemWidth) + 80);
+      if (!spacer) {
+        spacer = document.createElement('div');
+        spacer.className = 'ticker-spacer';
+        spacer.setAttribute('data-id', 'spacer');
+        this._trackElem.appendChild(spacer);
+      }
+      spacer.style.width = `${neededSpacerWidth.toFixed(0)}px`;
+    } else {
+      if (spacer) {
+        this._trackElem.removeChild(spacer);
+      }
+    }
+  }
+
+  _createItemElement(item) {
+    const unit = document.createElement('div');
+    unit.className = 'ticker-unit';
+    unit.setAttribute('data-id', item.id);
+    unit.innerHTML = `
+      <span class="ticker-item">
+        <span class="tag ${item.tag}">${item.label}</span>
+        <span class="ticker-text">${item.text}</span>
+      </span>
+      <span class="separator">◆</span>
+    `;
+    return unit;
+  }
+
+  _updateItemElement(unit, item) {
+    if (!unit || !item) return;
+    const textEl = unit.querySelector('.ticker-text');
+    if (textEl && textEl.textContent !== item.text) {
+      textEl.textContent = item.text;
+    }
+    const tagEl = unit.querySelector('.tag');
+    if (tagEl) {
+      if (tagEl.className !== `tag ${item.tag}`) {
+        tagEl.className = `tag ${item.tag}`;
+      }
+      if (tagEl.textContent !== item.label) {
+        tagEl.textContent = item.label;
+      }
+    }
+  }
+
+  _syncTrack(items) {
+    if (!this._trackElem) return;
+
+    this._activeItems = new Map(items.map(item => [item.id, item]));
+
+    // 1. Initial boot: populate track with items once (no clones!)
+    if (this._trackElem.children.length === 0) {
+      if (items.length === 0) return;
+      items.forEach(item => {
+        this._trackElem.appendChild(this._createItemElement(item));
+      });
+      requestAnimationFrame(() => this._updateSpacer());
+      return;
+    }
+
+    // 2. Track is already moving: update existing units in-place without moving positions
+    const existingIds = new Set();
+    const children = Array.from(this._trackElem.querySelectorAll('.ticker-unit'));
+    children.forEach(child => {
+      const id = child.getAttribute('data-id');
+      if (id && this._activeItems.has(id)) {
+        existingIds.add(id);
+        this._updateItemElement(child, this._activeItems.get(id));
+      }
+    });
+
+    // 3. Add brand new items to the entrance of the ticker (right edge)
+    // They will slide gracefully into view as the train moves forward
+    const spacer = this._trackElem.querySelector('.ticker-spacer');
+    let addedNew = false;
+    items.forEach(item => {
+      if (!existingIds.has(item.id)) {
+        const newUnit = this._createItemElement(item);
+        if (spacer) {
+          this._trackElem.insertBefore(newUnit, spacer);
+        } else {
+          this._trackElem.appendChild(newUnit);
+        }
+        addedNew = true;
+      }
+    });
+
+    if (addedNew) {
+      requestAnimationFrame(() => this._updateSpacer());
+    }
   }
 
   _updateContent() {
@@ -449,7 +613,7 @@ class F1TickerCard extends HTMLElement {
       return /^-?\d+(\.\d+)?$/.test(s);
     };
 
-    // 1. Determine Replay vs Live vs Before Mode
+    // 1. Determine Replay vs Live vs Before Mode matching f1_sensor
     const isReplayMode = (
       (replayMode && replayMode.state === 'on') ||
       (replayStatus && isAvailable(replayStatus) && ['playing', 'paused', 'running'].includes(replayStatus.state.toLowerCase())) ||
@@ -468,7 +632,7 @@ class F1TickerCard extends HTMLElement {
         badgeClass = 'status-replay-paused';
         badgeHtml = '[REPLAY PAUSED]';
       } else {
-        badgeClass = 'status-replay';
+        badgeClass = 'status-replay-running';
         badgeHtml = '<span class="pulse-dot"></span> REPLAY RUNNING';
       }
     } else {
@@ -488,22 +652,35 @@ class F1TickerCard extends HTMLElement {
       ? positions.attributes.drivers
       : [];
 
-    let items = [];
+    const items = [];
 
-    // 2. Race Control Messages (Text details only)
+    // 2. Race Control Messages (Text details only, unique per message)
     if (this._config.show_race_control !== false && isAvailable(rc)) {
-      const text = rc.state.trim();
-      if (!isPureNumber(text) && text.length > 1 && text.toUpperCase() !== 'OFFLINE' && text.toUpperCase() !== 'NONE') {
-        items.push({ tag: 'tag-rc', label: '🚨 RACE CONTROL', text: text });
+      if (rc.attributes && Array.isArray(rc.attributes.history) && rc.attributes.history.length > 0) {
+        // Take up to 3 most recent unique messages
+        const recentMsgs = rc.attributes.history.slice(0, 3);
+        recentMsgs.forEach(m => {
+          const text = (m.message || '').trim();
+          if (!isPureNumber(text) && text.length > 1 && text.toUpperCase() !== 'OFFLINE' && text.toUpperCase() !== 'NONE') {
+            const key = m.event_id || text;
+            items.push({ id: `rc-${key}`, tag: 'tag-rc', label: '🚨 RACE CONTROL', text });
+          }
+        });
+      } else {
+        const text = rc.state.trim();
+        if (!isPureNumber(text) && text.length > 1 && text.toUpperCase() !== 'OFFLINE' && text.toUpperCase() !== 'NONE') {
+          items.push({ id: `rc-${text}`, tag: 'tag-rc', label: '🚨 RACE CONTROL', text });
+        }
       }
     }
 
-    // 3. Track Status with Dynamic Color Coding
+    // 3. Track Status with Dynamic Color Coding matching f1_sensor
     if (this._config.show_track_status !== false && isAvailable(track)) {
       const rawTrack = track.state.trim().toUpperCase();
       if (!isPureNumber(rawTrack) && rawTrack !== 'UNKNOWN') {
         const trackConf = this._getTrackStatusConfig(rawTrack);
         items.push({
+          id: 'track-status',
           tag: trackConf.tag,
           label: trackConf.label,
           text: trackConf.text,
@@ -519,9 +696,10 @@ class F1TickerCard extends HTMLElement {
         const lap = flDriver.fastest_lap_lap || flDriver.best_lap_lap || '';
         const lapStr = lap ? ` (Lap ${lap})` : '';
         items.push({
+          id: 'fastest-lap',
           tag: 'tag-fastest',
           label: '⚡ FASTEST LAP',
-          text: `${flDriver.tla || flDriver.name} - ${time}${lapStr}`
+          text: `${flDriver.tla || flDriver.name} - ${time}${lapStr}`,
         });
       }
     }
@@ -538,9 +716,10 @@ class F1TickerCard extends HTMLElement {
           if (!isNaN(val) && val <= 1.2 && val > 0) {
             const formattedInterval = `+${val.toFixed(1)}s`;
             items.push({
+              id: `battle-${ahead.tla}-${curr.tla}`,
               tag: 'tag-battle',
               label: '⚔️ DRS BATTLE',
-              text: `P${ahead.current_position} ${ahead.tla} vs P${curr.current_position} ${curr.tla} (${formattedInterval})`
+              text: `P${ahead.current_position} ${ahead.tla} vs P${curr.current_position} ${curr.tla} (${formattedInterval})`,
             });
             battleCount++;
           }
@@ -553,9 +732,10 @@ class F1TickerCard extends HTMLElement {
       const inPitDrivers = drivers.filter(d => d.in_pit === true).map(d => d.tla || d.name);
       if (inPitDrivers.length > 0) {
         items.push({
+          id: 'pit-stops',
           tag: 'tag-pit',
           label: '🛞 IN PIT',
-          text: `${inPitDrivers.join(', ')} in pit lane`
+          text: `${inPitDrivers.join(', ')} in pit lane`,
         });
       }
     }
@@ -564,9 +744,10 @@ class F1TickerCard extends HTMLElement {
     if (this._config.show_lap_count === true && isAvailable(lapCount)) {
       const total = lapCount.attributes && lapCount.attributes.total_laps ? ` / ${lapCount.attributes.total_laps}` : '';
       items.push({
+        id: 'lap-count',
         tag: 'tag-lap',
         label: '🏁 LAP',
-        text: `${lapCount.state}${total}`
+        text: `${lapCount.state}${total}`,
       });
     }
 
@@ -581,9 +762,10 @@ class F1TickerCard extends HTMLElement {
       if (rain !== undefined && rain > 0) wParts.push(`Rain: ${rain}mm`);
       if (wParts.length > 0) {
         items.push({
+          id: 'weather',
           tag: 'tag-weather',
           label: '🌡️ WEATHER',
-          text: wParts.join(' • ')
+          text: wParts.join(' • '),
         });
       }
     }
@@ -592,7 +774,7 @@ class F1TickerCard extends HTMLElement {
     if (this._config.show_fia_documents === true && isAvailable(fia)) {
       const title = (fia.attributes && fia.attributes.name) ? fia.attributes.name : null;
       if (title && !isPureNumber(title)) {
-        items.push({ tag: 'tag-fia', label: '📄 FIA DECISION', text: title });
+        items.push({ id: `fia-${title}`, tag: 'tag-fia', label: '📄 FIA DECISION', text: title });
       }
     }
 
@@ -602,7 +784,7 @@ class F1TickerCard extends HTMLElement {
       const rLoc = (nextRace.attributes && nextRace.attributes.circuit_locality) ? nextRace.attributes.circuit_locality : null;
       if (rName) {
         const text = rLoc ? `${rName} (${rLoc})` : rName;
-        items.push({ tag: 'tag-neutral', label: '🏁 NEXT GP', text: text });
+        items.push({ id: 'next-race', tag: 'tag-neutral', label: '🏁 NEXT GP', text: text });
       }
     }
 
@@ -610,62 +792,27 @@ class F1TickerCard extends HTMLElement {
     if (items.length === 0) {
       if (isAvailable(track) && !isPureNumber(track.state)) {
         const trackConf = this._getTrackStatusConfig(track.state);
-        items.push({ tag: trackConf.tag, label: trackConf.label, text: trackConf.text });
+        items.push({ id: 'fallback-track', tag: trackConf.tag, label: trackConf.label, text: trackConf.text });
       }
       if (isAvailable(nextRace) && nextRace.attributes && nextRace.attributes.race_name) {
-        items.push({ tag: 'tag-neutral', label: '🏁 NEXT GP', text: nextRace.attributes.race_name });
+        items.push({ id: 'fallback-next', tag: 'tag-neutral', label: '🏁 NEXT GP', text: nextRace.attributes.race_name });
       }
       if (isReplayMode) {
-        items.push({ tag: 'tag-replay', label: '↶ REPLAY', text: 'No active incident notices for current replay session' });
+        items.push({ id: 'fallback-replay', tag: 'tag-neutral', label: '↶ REPLAY', text: 'No active incident notices for current replay session' });
       } else {
-        items.push({ tag: 'tag-neutral', label: 'BEFORE', text: 'Waiting for live track session to start' });
+        items.push({ id: 'fallback-before', tag: 'tag-neutral', label: 'BEFORE', text: 'Waiting for live track session to start' });
       }
     }
 
-    // Update Status Badge
+    // Update Status Badge in Header
     const statusPill = this.shadowRoot.getElementById('status-pill');
     if (statusPill) {
       statusPill.className = `status-pill ${badgeClass}`;
       statusPill.innerHTML = badgeHtml;
     }
 
-    // Generate Signature to avoid rebuilding DOM when identical
-    const signature = JSON.stringify({
-      items,
-      speed: this._config.speed || 35,
-    });
-
-    if (this._lastSignature === signature && this._groupWidth > 0) {
-      return; // Data has not changed: maintain current marquee scroll position
-    }
-    this._lastSignature = signature;
-
-    // Build base HTML sequence for items
-    const baseHtml = items.map(item => `
-      <span class="ticker-item">
-        <span class="tag ${item.tag}">${item.label}</span>
-        <span>${item.text}</span>
-      </span>
-      <span class="separator">◆</span>
-    `).join('');
-
-    // Ensure content group repeats enough times to exceed widescreen viewport (min 2500px)
-    const repeatCount = Math.max(3, Math.ceil(2400 / Math.max(300, items.length * 160)));
-    const repeatedHtml = baseHtml.repeat(repeatCount);
-
-    const c1 = this.shadowRoot.getElementById('content-1');
-    const c2 = this.shadowRoot.getElementById('content-2');
-
-    if (c1 && c2) {
-      c1.innerHTML = repeatedHtml;
-      c2.innerHTML = repeatedHtml;
-
-      // Measure group width without resetting scroll position!
-      requestAnimationFrame(() => {
-        const measuredWidth = c1.offsetWidth || 1800;
-        this._groupWidth = measuredWidth;
-      });
-    }
+    // Sync track items
+    this._syncTrack(items);
   }
 
   _getTrackStatusConfig(raw) {
@@ -708,7 +855,7 @@ class F1TickerCard extends HTMLElement {
     return {
       tag: 'tag-track-clear',
       label: '✓ TRACK STATUS',
-      text: (s === 'CLEAR' || s === 'GREEN') ? 'TRACK CLEAR' : s,
+      text: s === 'CLEAR' || s === 'GREEN' ? 'TRACK CLEAR' : s,
     };
   }
 
@@ -717,9 +864,6 @@ class F1TickerCard extends HTMLElement {
   }
 }
 
-/**
- * Visual UI Editor for F1TickerCard
- */
 class F1TickerCardEditor extends HTMLElement {
   setConfig(config) {
     this._config = Object.assign({}, config);
