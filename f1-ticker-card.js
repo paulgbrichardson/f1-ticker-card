@@ -1,10 +1,15 @@
 /**
  * F1 Live Race Control Ticker Card (f1-ticker-card)
- * Version: 1.5.0
+ * Version: 1.6.0
  * 
  * Hardware-accelerated continuous 60fps single-message conveyor ticker.
  * Natively matches Nicxe/f1_sensor design system with authentic Formula 1 typography,
  * fully-rounded capsule status pills, theme-matched color variables, and graceful incoming message loading.
+ * 
+ * Features intelligent Replay Time-Travel & Seek Synchronization:
+ * Automatically detects playback position jumps, backwards rewinds (-30s), forward fast-forward,
+ * and session swaps — instantly emptying stale future telemetry and loading fresh snapshot data
+ * from the exact new timestamp.
  */
 
 // Automated font loader matching Nicxe/f1_sensor
@@ -72,6 +77,9 @@ class F1TickerCard extends HTMLElement {
     this._animFrame = null;
     this._isPaused = false;
     this._activeItems = new Map();
+    this._lastPlaybackPos = null;
+    this._lastSessionId = null;
+    this._wasReplayMode = null;
     this._tick = this._tick.bind(this);
   }
 
@@ -248,6 +256,9 @@ class F1TickerCard extends HTMLElement {
       }
       .status-replay-paused {
         color: #f59e0b; /* Amber paused state matching f1_sensor rc-status-pill.paused */
+      }
+      .status-replay-seeking {
+        color: #ff9500; /* Orange seeking state matching f1_sensor rc-status-pill.loading */
       }
       .status-live {
         color: #ff3b30; /* Red live session indicator */
@@ -549,7 +560,7 @@ class F1TickerCard extends HTMLElement {
 
     this._activeItems = new Map(items.map(item => [item.id, item]));
 
-    // 1. Initial boot: populate track with items once (no clones!)
+    // 1. Initial boot or post-jump reset: populate track with fresh items once
     if (this._trackElem.children.length === 0) {
       if (items.length === 0) return;
       items.forEach(item => {
@@ -616,10 +627,71 @@ class F1TickerCard extends HTMLElement {
     // 1. Determine Replay vs Live vs Before Mode matching f1_sensor
     const isReplayMode = (
       (replayMode && replayMode.state === 'on') ||
-      (replayStatus && isAvailable(replayStatus) && ['playing', 'paused', 'running'].includes(replayStatus.state.toLowerCase())) ||
+      (replayStatus && isAvailable(replayStatus) && ['playing', 'paused', 'running', 'seeking', 'loading'].includes(replayStatus.state.toLowerCase())) ||
       (replayPlayer && isAvailable(replayPlayer) && ['playing', 'paused'].includes(replayPlayer.state.toLowerCase()))
     );
 
+    // 2. Intelligent Replay Seek & Jump-Back Detection
+    let seekDetected = false;
+    let isSeeking = false;
+
+    if (isReplayMode) {
+      const pos = Number(
+        (replayStatus && replayStatus.attributes && replayStatus.attributes.playback_position_s !== undefined)
+          ? replayStatus.attributes.playback_position_s
+          : ((replayPlayer && replayPlayer.attributes && replayPlayer.attributes.playback_position_s !== undefined)
+            ? replayPlayer.attributes.playback_position_s
+            : ((replayPlayer && replayPlayer.attributes && replayPlayer.attributes.media_position !== undefined)
+              ? replayPlayer.attributes.media_position
+              : null))
+      );
+
+      const sessionId = String(
+        (replayStatus && replayStatus.attributes && replayStatus.attributes.selected_session_id)
+          || (replayPlayer && replayPlayer.attributes && replayPlayer.attributes.selected_session_id)
+          || ''
+      );
+
+      const replayState = (replayStatus && replayStatus.state) ? replayStatus.state.toLowerCase() : '';
+      if (replayState === 'seeking' || replayState === 'loading') {
+        isSeeking = true;
+        seekDetected = true;
+      }
+
+      // Detect if user loaded a different replay session
+      if (this._lastSessionId !== null && sessionId && sessionId !== this._lastSessionId) {
+        seekDetected = true;
+      }
+
+      // Detect jump backwards (even by > 2s) or large jump forward (> 10s)
+      if (!isNaN(pos) && this._lastPlaybackPos !== null && !isNaN(this._lastPlaybackPos)) {
+        const delta = pos - this._lastPlaybackPos;
+        if (delta < -2 || delta > 10) {
+          seekDetected = true;
+        }
+      }
+
+      if (!isNaN(pos)) this._lastPlaybackPos = pos;
+      if (sessionId) this._lastSessionId = sessionId;
+    } else {
+      // Switched out of replay mode into live session
+      if (this._wasReplayMode === true) {
+        seekDetected = true;
+      }
+      this._lastPlaybackPos = null;
+      this._lastSessionId = null;
+    }
+    this._wasReplayMode = isReplayMode;
+
+    // If jump or seek detected, EMPTY the ticker completely!
+    if (seekDetected && this._trackElem) {
+      this._trackElem.innerHTML = '';
+      this._scrollPos = 0;
+      this._activeItems.clear();
+      this._lastTime = performance.now();
+    }
+
+    // 3. Status Pill Label & Theme Tone
     let badgeClass = 'status-before';
     let badgeHtml = 'BEFORE';
 
@@ -628,7 +700,11 @@ class F1TickerCard extends HTMLElement {
         (replayStatus && (replayStatus.state.toLowerCase() === 'paused' || (replayStatus.attributes && replayStatus.attributes.paused === true))) ||
         (replayPlayer && replayPlayer.state.toLowerCase() === 'paused')
       );
-      if (isPaused) {
+
+      if (isSeeking) {
+        badgeClass = 'status-replay-seeking';
+        badgeHtml = '<span class="pulse-dot"></span> [SEEKING]';
+      } else if (isPaused) {
         badgeClass = 'status-replay-paused';
         badgeHtml = '[REPLAY PAUSED]';
       } else {
@@ -654,7 +730,7 @@ class F1TickerCard extends HTMLElement {
 
     const items = [];
 
-    // 2. Race Control Messages (Text details only, unique per message)
+    // 4. Race Control Messages (Text details only, unique per message)
     if (this._config.show_race_control !== false && isAvailable(rc)) {
       if (rc.attributes && Array.isArray(rc.attributes.history) && rc.attributes.history.length > 0) {
         // Take up to 3 most recent unique messages
@@ -674,7 +750,7 @@ class F1TickerCard extends HTMLElement {
       }
     }
 
-    // 3. Track Status with Dynamic Color Coding matching f1_sensor
+    // 5. Track Status with Dynamic Color Coding matching f1_sensor
     if (this._config.show_track_status !== false && isAvailable(track)) {
       const rawTrack = track.state.trim().toUpperCase();
       if (!isPureNumber(rawTrack) && rawTrack !== 'UNKNOWN') {
@@ -688,7 +764,7 @@ class F1TickerCard extends HTMLElement {
       }
     }
 
-    // 4. Fastest Lap
+    // 6. Fastest Lap
     if (this._config.show_fastest_lap !== false && drivers.length > 0) {
       const flDriver = drivers.find(d => d.fastest_lap === true);
       if (flDriver) {
@@ -704,7 +780,7 @@ class F1TickerCard extends HTMLElement {
       }
     }
 
-    // 5. On-Track Battles (Intervals <= 1.2s DRS range, stabilized to 1 decimal place)
+    // 7. On-Track Battles (Intervals <= 1.2s DRS range, stabilized to 1 decimal place)
     if (this._config.show_battles !== false && drivers.length > 1) {
       let battleCount = 0;
       for (let i = 1; i < drivers.length && battleCount < 3; i++) {
@@ -727,7 +803,7 @@ class F1TickerCard extends HTMLElement {
       }
     }
 
-    // 6. Pit Stops (Only active cars in pit lane)
+    // 8. Pit Stops (Only active cars in pit lane)
     if (this._config.show_pit_stops !== false) {
       const inPitDrivers = drivers.filter(d => d.in_pit === true).map(d => d.tla || d.name);
       if (inPitDrivers.length > 0) {
@@ -740,7 +816,7 @@ class F1TickerCard extends HTMLElement {
       }
     }
 
-    // 7. Lap Count
+    // 9. Lap Count
     if (this._config.show_lap_count === true && isAvailable(lapCount)) {
       const total = lapCount.attributes && lapCount.attributes.total_laps ? ` / ${lapCount.attributes.total_laps}` : '';
       items.push({
@@ -751,7 +827,7 @@ class F1TickerCard extends HTMLElement {
       });
     }
 
-    // 8. Track Weather
+    // 10. Track Weather
     if (this._config.show_weather === true && isAvailable(weather) && weather.attributes) {
       const tTrack = weather.attributes.track_temperature;
       const tAir = weather.attributes.air_temperature;
@@ -770,7 +846,7 @@ class F1TickerCard extends HTMLElement {
       }
     }
 
-    // 9. FIA Decision Documents
+    // 11. FIA Decision Documents
     if (this._config.show_fia_documents === true && isAvailable(fia)) {
       const title = (fia.attributes && fia.attributes.name) ? fia.attributes.name : null;
       if (title && !isPureNumber(title)) {
@@ -778,7 +854,7 @@ class F1TickerCard extends HTMLElement {
       }
     }
 
-    // 10. Next Race Countdown
+    // 12. Next Race Countdown
     if (this._config.show_next_race === true && isAvailable(nextRace)) {
       const rName = (nextRace.attributes && nextRace.attributes.race_name) ? nextRace.attributes.race_name : null;
       const rLoc = (nextRace.attributes && nextRace.attributes.circuit_locality) ? nextRace.attributes.circuit_locality : null;
@@ -790,17 +866,21 @@ class F1TickerCard extends HTMLElement {
 
     // Fallback if no items currently active
     if (items.length === 0) {
-      if (isAvailable(track) && !isPureNumber(track.state)) {
-        const trackConf = this._getTrackStatusConfig(track.state);
-        items.push({ id: 'fallback-track', tag: trackConf.tag, label: trackConf.label, text: trackConf.text });
-      }
-      if (isAvailable(nextRace) && nextRace.attributes && nextRace.attributes.race_name) {
-        items.push({ id: 'fallback-next', tag: 'tag-neutral', label: '🏁 NEXT GP', text: nextRace.attributes.race_name });
-      }
-      if (isReplayMode) {
-        items.push({ id: 'fallback-replay', tag: 'tag-neutral', label: '↶ REPLAY', text: 'No active incident notices for current replay session' });
+      if (isSeeking) {
+        items.push({ id: 'fallback-seeking', tag: 'tag-track-sc', label: '↶ REPLAY SEEK', text: 'Synchronizing timeline to new timestamp...' });
       } else {
-        items.push({ id: 'fallback-before', tag: 'tag-neutral', label: 'BEFORE', text: 'Waiting for live track session to start' });
+        if (isAvailable(track) && !isPureNumber(track.state)) {
+          const trackConf = this._getTrackStatusConfig(track.state);
+          items.push({ id: 'fallback-track', tag: trackConf.tag, label: trackConf.label, text: trackConf.text });
+        }
+        if (isAvailable(nextRace) && nextRace.attributes && nextRace.attributes.race_name) {
+          items.push({ id: 'fallback-next', tag: 'tag-neutral', label: '🏁 NEXT GP', text: nextRace.attributes.race_name });
+        }
+        if (isReplayMode) {
+          items.push({ id: 'fallback-replay', tag: 'tag-neutral', label: '↶ REPLAY', text: 'No active incident notices for current replay session' });
+        } else {
+          items.push({ id: 'fallback-before', tag: 'tag-neutral', label: 'BEFORE', text: 'Waiting for live track session to start' });
+        }
       }
     }
 
