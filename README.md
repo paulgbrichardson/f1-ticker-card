@@ -1,11 +1,11 @@
 # F1 Race Control Ticker Card (`custom:f1-ticker-card`)
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/default)
-[![version](https://img.shields.io/badge/version-1.0.0-e10600.svg)](https://github.com)
+[![version](https://img.shields.io/badge/version-1.1.0-e10600.svg)](https://github.com)
 [![license](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.1%2B-blue.svg)](https://www.home-assistant.io)
 
-A smooth, hardware-accelerated animated marquee ticker card for Formula 1 race control announcements, steward investigations, track limits warnings, flags, and FIA bulletins in Home Assistant Lovelace dashboards.
+A smooth, hardware-accelerated animated marquee ticker card for Formula 1 race control announcements, steward investigations, track limits warnings, fastest laps, DRS battles, pit stops, track status flags, weather, and FIA bulletins in Home Assistant Lovelace dashboards.
 
 Designed specifically to match the official **Formula 1 Pit Wall** aesthetic with dark gradients, signature FIA badges, and red accent borders (`#e10600`).
 
@@ -13,18 +13,28 @@ Designed specifically to match the official **Formula 1 Pit Wall** aesthetic wit
 
 ## ✨ Features
 
-- 🏎️ **Native Shadow DOM Marquee**: Hardware-accelerated CSS marquee animation that will never be stripped or broken by Home Assistant's DOMPurify sanitizer.
+- 🏎️ **Native Shadow DOM Marquee**: 60 FPS hardware-accelerated CSS marquee animation that will never be stripped or broken by Home Assistant's DOMPurify sanitizer.
+- 🔴 **Smart Session Mode Pill**: The status badge in the corner automatically detects session state:
+  - **`⏪ REPLAY`** / **`REPLAY (PAUSED)`** (Cyan badge): When watching a recorded session via Replay mode (`input_boolean.f1_replay_mode` or `sensor.f1_replay_status`).
+  - **`🔴 LIVE SESSION`** (Red pulsing badge): During live on-track Grand Prix sessions.
+  - **`🟢 STANDBY`** (Emerald badge): Between race weekends or when sessions are idle.
 - 🎛️ **Full Visual UI Editor**: Configure scroll speed, titles, and pick exactly which ticker categories appear directly from the dashboard card settings UI without writing YAML.
 - 🔘 **Granular Category Toggles**:
-  - 🚨 Official Race Director messages & Safety Car alerts
-  - 🔍 Steward Investigations & Penalty notices
-  - 🛑 Track Limits violations & deleted lap times
-  - 🚦 Global Track Status (Green / Clear, Yellow, VSC, Safety Car, Red Flag)
-  - 📄 FIA Decision Documents (optional)
-  - 🏁 Next Race Countdown & venue info (optional)
-- ⏸️ **Hover / Touch to Pause**: Hovering or touching the ticker pauses scrolling so you can comfortably read fast-paced race control notices.
+  - 🚨 **Race Control Messages**: Official race director flags, safety cars, and instructions
+  - 🔍 **Steward Investigations**: Inquiries, penalties, and driver citations
+  - 🛑 **Track Limits**: Corner track limits warnings and deleted laps
+  - 🚦 **Track Status**: Global track flags (Clear, Yellow, VSC, Safety Car, Red Flag)
+  - ⚡ **Fastest Lap**: Real-time fastest lap driver, sector time, and lap number (Purple tag)
+  - ⚔️ **DRS Battles**: On-track driver battles within 1.2s DRS interval (e.g. `P1 VER vs P2 LEC (+0.88s)`)
+  - 🛞 **Pit Stops**: Real-time in-pit lane notifications and total stop counts
+  - 🏆 **Top 3 Leaders**: Current podium order with gaps to leader
+  - 🌡️ **Track & Weather**: Track temperature, air temperature, and rainfall alerts
+  - 🏁 **Lap Progress**: Current lap and total race distance
+  - 📄 **FIA Decision Documents**: Published official bulletin documents (e.g. `Doc 91`)
+  - 🏁 **Next Race Countdown**: Upcoming Grand Prix round & venue countdown
+- ⏸️ **Hover / Touch to Pause**: Hovering with mouse or touching on mobile pauses scrolling so you can comfortably read fast-paced notices.
 - 🔄 **Continuous Seamless Loop**: Dual-buffer track prevents gaps or jerky restarts.
-- 📡 **Intelligent Standby Fallback**: When live race sessions are idle, the card automatically displays track status and upcoming Grand Prix countdown instead of blank text.
+- 📐 **Full-Width Dashboard Spanning**: Optimized for Lovelace `sections` view with `column_span: 4` to span edge-to-edge across all dashboard columns.
 
 ---
 
@@ -57,56 +67,35 @@ Designed specifically to match the official **Formula 1 Pit Wall** aesthetic wit
 
 ## 🚀 Lovelace Configuration
 
-### Using the Visual Card Editor
-Add a new card to your dashboard and select **F1 Race Control Ticker Card**. You can interactively:
-- Customize header title and subtitle.
-- Adjust marquee scroll duration (10–120 seconds).
-- Toggle Race Control, Steward Investigations, Track Limits, Track Status, FIA Documents, and Next Race.
+### Full-Width Banner in Sections View (Recommended)
+Place the card in a grid section with `column_span: 4` so it stretches across the entire screen:
 
----
-
-### YAML Configuration
-
-#### Minimal Setup (Recommended Defaults)
 ```yaml
-type: custom:f1-ticker-card
-title: "LIVE RACE CONTROL TICKER"
-subtitle: "INCIDENTS & TRACK LIMITS"
-speed: 35
-```
-
-#### Customized Setup (Excluding FIA Documents & Next Race)
-```yaml
-type: custom:f1-ticker-card
-title: "LIVE RACE CONTROL TICKER"
-subtitle: "INCIDENTS & TRACK LIMITS"
-speed: 30
-show_race_control: true
-show_investigations: true
-show_track_limits: true
-show_track_status: true
-show_fia_documents: false
-show_next_race: false
-```
-
-#### Full Setup with Custom Entity IDs
-```yaml
-type: custom:f1-ticker-card
-title: "LIVE RACE CONTROL TICKER"
-subtitle: "INCIDENTS & TRACK LIMITS"
-speed: 40
-show_race_control: true
-show_investigations: true
-show_track_limits: true
-show_track_status: true
-show_fia_documents: false
-show_next_race: false
-race_control_entity: sensor.f1_race_control
-investigations_entity: sensor.f1_investigations
-track_limits_entity: sensor.f1_track_limits
-track_status_entity: sensor.f1_track_status
-fia_documents_entity: sensor.f1_fia_documents
-next_race_entity: sensor.f1_next_race
+views:
+  - title: F1 Pit Wall
+    path: f1
+    type: sections
+    max_columns: 4
+    sections:
+      - type: grid
+        column_span: 4
+        cards:
+          - type: custom:f1-ticker-card
+            title: "LIVE RACE CONTROL TICKER"
+            subtitle: "INCIDENTS & TRACK LIMITS"
+            speed: 35
+            show_race_control: true
+            show_investigations: true
+            show_track_limits: true
+            show_track_status: true
+            show_fastest_lap: true
+            show_battles: true
+            show_pit_stops: true
+            show_leaders: false
+            show_weather: false
+            show_lap_count: false
+            show_fia_documents: false
+            show_next_race: false
 ```
 
 ---
@@ -122,28 +111,26 @@ next_race_entity: sensor.f1_next_race
 | `show_investigations` | boolean | `true` | Display active steward inquiries and penalty decisions |
 | `show_track_limits` | boolean | `true` | Display corner track limits warnings and deleted laps |
 | `show_track_status` | boolean | `true` | Display global track status flags (Clear, Yellow, VSC, SC, Red) |
+| `show_fastest_lap` | boolean | `true` | Display current fastest lap driver, sector time, and lap |
+| `show_battles` | boolean | `true` | Display live battles within 1.2s DRS interval |
+| `show_pit_stops` | boolean | `true` | Display drivers entering pit lane and total stops |
+| `show_leaders` | boolean | `false` | Display P1, P2, P3 positions and gap to leader |
+| `show_weather` | boolean | `false` | Display track temperature, air temperature, and rain |
+| `show_lap_count` | boolean | `false` | Display current lap number and race distance |
 | `show_fia_documents` | boolean | `false` | Display published FIA bulletin classification documents |
 | `show_next_race` | boolean | `false` | Display upcoming Grand Prix round & venue countdown |
 | `race_control_entity` | string | `sensor.f1_race_control` | Entity ID for race control notices |
 | `investigations_entity` | string | `sensor.f1_investigations` | Entity ID for steward investigations |
 | `track_limits_entity` | string | `sensor.f1_track_limits` | Entity ID for track limits violations |
 | `track_status_entity` | string | `sensor.f1_track_status` | Entity ID for track status |
+| `driver_positions_entity` | string | `sensor.f1_driver_positions` | Entity ID for fastest laps, DRS gaps, and battles |
+| `pitstops_entity` | string | `sensor.f1_pitstops` | Entity ID for pit stop records |
+| `track_weather_entity` | string | `sensor.f1_track_weather` | Entity ID for track and air temperature |
+| `lap_count_entity` | string | `sensor.f1_race_lap_count` | Entity ID for lap progress |
+| `replay_mode_entity` | string | `input_boolean.f1_replay_mode` | Entity ID for Replay Mode boolean |
+| `replay_status_entity` | string | `sensor.f1_replay_status` | Entity ID for F1 Replay engine status |
 | `fia_documents_entity` | string | `sensor.f1_fia_documents` | Entity ID for FIA decision documents |
 | `next_race_entity` | string | `sensor.f1_next_race` | Entity ID for upcoming race info |
-
----
-
-## 🏎️ Prerequisites & Sensors
-
-This card is designed to pair seamlessly with the standard Home Assistant **Formula 1 integration** (installed via HACS). It connects to:
-- `sensor.f1_race_control`
-- `sensor.f1_investigations`
-- `sensor.f1_track_limits`
-- `sensor.f1_track_status`
-- `sensor.f1_fia_documents`
-- `sensor.f1_next_race`
-
-If sensors are not yet active or Formula 1 is between race weekends, the card will automatically switch to **STANDBY** mode and show upcoming track schedule information.
 
 ---
 
