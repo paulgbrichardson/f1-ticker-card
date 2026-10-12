@@ -1,15 +1,62 @@
 /**
  * F1 Live Race Control Ticker Card (f1-ticker-card)
- * Version: 1.2.0
+ * Version: 1.3.0
  * 
- * Hardware-accelerated marquee ticker matching official F1 Weekend Hub standards
- * for typography ('F1 Barlow Condensed'), palette, borders, surfaces, and chip status pills.
+ * Hardware-accelerated continuous marquee ticker matching official F1 Weekend Hub standards
+ * for typography ('F1 Barlow Condensed'), palette, borders, surfaces, dynamic track status boxes,
+ * and intelligent replay vs. live session status badges.
  */
+
+function ensureF1Typography() {
+  if (window._f1TypographyInitialized) return;
+  window._f1TypographyInitialized = true;
+
+  const fontUrl = '/local/f1-sensor-live-data-card/fonts/barlow-condensed-latin-700-normal.woff2';
+
+  // 1. Injected @font-face definition in head
+  const style = document.createElement('style');
+  style.id = 'f1-ticker-font-styles';
+  style.textContent = `
+    @font-face {
+      font-family: 'F1 Barlow Condensed';
+      src: url('${fontUrl}') format('woff2');
+      font-weight: 100 900;
+      font-style: normal;
+      font-display: swap;
+    }
+  `;
+  document.head.appendChild(style);
+
+  // 2. Register font via FontFace API
+  if (window.FontFace && document.fonts) {
+    try {
+      const face = new FontFace('F1 Barlow Condensed', `url('${fontUrl}')`, {
+        weight: '100 900',
+        style: 'normal',
+        display: 'swap',
+      });
+      document.fonts.add(face);
+      face.load().catch(() => {});
+    } catch (e) {}
+  }
+
+  // 3. Fallback to Google Fonts Barlow Condensed
+  if (!document.querySelector('link[href*="Barlow+Condensed"]')) {
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = 'https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,400;0,600;0,700;0,800;0,900&display=swap';
+    document.head.appendChild(link);
+  }
+}
+
+// Initialize typography immediately
+ensureF1Typography();
 
 class F1TickerCard extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: 'open' });
+    this._lastSignature = null;
   }
 
   static getConfigElement() {
@@ -30,8 +77,6 @@ class F1TickerCard extends HTMLElement {
       show_lap_count: false,
       show_fia_documents: false,
       show_next_race: false,
-      show_investigations: false,
-      show_track_limits: false,
     };
   }
 
@@ -49,11 +94,7 @@ class F1TickerCard extends HTMLElement {
       show_lap_count: false,
       show_fia_documents: false,
       show_next_race: false,
-      show_investigations: false,
-      show_track_limits: false,
       race_control_entity: 'sensor.f1_race_control',
-      investigations_entity: 'sensor.f1_investigations',
-      track_limits_entity: 'sensor.f1_track_limits',
       track_status_entity: 'sensor.f1_track_status',
       driver_positions_entity: 'sensor.f1_driver_positions',
       pitstops_entity: 'sensor.f1_pitstops',
@@ -63,7 +104,10 @@ class F1TickerCard extends HTMLElement {
       next_race_entity: 'sensor.f1_next_race',
       replay_mode_entity: 'input_boolean.f1_replay_mode',
       replay_status_entity: 'sensor.f1_replay_status',
+      session_status_entity: 'sensor.f1_session_status',
     }, config || {});
+
+    ensureF1Typography();
     this._renderBase();
   }
 
@@ -73,18 +117,27 @@ class F1TickerCard extends HTMLElement {
   }
 
   _renderBase() {
+    const fontUrl = '/local/f1-sensor-live-data-card/fonts/barlow-condensed-latin-700-normal.woff2';
     const style = `
+      @font-face {
+        font-family: 'F1 Barlow Condensed';
+        src: url('${fontUrl}') format('woff2');
+        font-weight: 100 900;
+        font-style: normal;
+        font-display: swap;
+      }
       :host {
         display: block;
         width: 100%;
         color: var(--f1-text, var(--primary-text-color, #e9edf3));
-        font-family: 'F1 Barlow Condensed', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-family: 'F1 Barlow Condensed', 'Formula1', 'Formula 1', 'Barlow Condensed', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
         font-size: 1rem;
         line-height: 1.5;
         box-sizing: border-box;
       }
       * {
         box-sizing: border-box;
+        font-family: inherit;
       }
       ha-card {
         background: var(--f1-surface, var(--ha-card-background, var(--card-background-color, #15151e)));
@@ -114,7 +167,6 @@ class F1TickerCard extends HTMLElement {
       .fia-badge {
         background: var(--f1-accent, #e10600);
         color: #fff;
-        font-family: 'F1 Barlow Condensed', sans-serif;
         font-size: 0.72rem;
         font-weight: 800;
         letter-spacing: 0.08em;
@@ -123,15 +175,13 @@ class F1TickerCard extends HTMLElement {
         text-transform: uppercase;
       }
       .title-text {
-        font-family: 'F1 Barlow Condensed', sans-serif;
         font-size: 1.15rem;
         font-weight: 700;
-        letter-spacing: 0.025em;
+        letter-spacing: 0.03em;
         color: var(--f1-text, var(--primary-text-color, #e9edf3));
         text-transform: uppercase;
       }
       .subtitle-text {
-        font-family: inherit;
         font-size: 0.8rem;
         font-weight: 600;
         letter-spacing: 0.04em;
@@ -139,47 +189,54 @@ class F1TickerCard extends HTMLElement {
         text-transform: uppercase;
       }
 
-      /* F1 Weekend Hub standard chip style */
+      /* Official F1 Weekend Hub standard status chips */
       .status-pill {
         display: inline-flex;
         align-items: center;
         gap: 6px;
         font-size: 0.78rem;
         font-weight: 700;
-        letter-spacing: 0.04em;
+        letter-spacing: 0.06em;
         text-transform: uppercase;
         padding: 2px 8px;
         border: 1px solid currentColor;
         border-radius: 5px;
-        font-family: 'F1 Barlow Condensed', sans-serif;
+        transition: all 0.25s ease;
       }
       .status-live {
         color: #d93636;
         background: rgba(217, 54, 54, 0.16);
+        border-color: rgba(217, 54, 54, 0.4);
       }
       .status-replay {
         color: #3978d5;
-        background: rgba(57, 120, 213, 0.14);
+        background: rgba(57, 120, 213, 0.16);
+        border-color: rgba(57, 120, 213, 0.4);
       }
-      .status-standby {
+      .status-replay-paused {
+        color: #f6d65c;
+        background: rgba(246, 214, 92, 0.14);
+        border-color: rgba(246, 214, 92, 0.4);
+      }
+      .status-before {
         color: #75dc94;
         background: rgba(117, 220, 148, 0.14);
+        border-color: rgba(117, 220, 148, 0.4);
       }
       .pulse-dot {
         width: 6px;
         height: 6px;
         border-radius: 50%;
         background: currentColor;
-      }
-      .status-live .pulse-dot {
         box-shadow: 0 0 6px currentColor;
-        animation: pulse 1.5s infinite;
+        animation: pulse 1.5s infinite ease-in-out;
       }
       @keyframes pulse {
         0%, 100% { opacity: 1; transform: scale(1); }
         50% { opacity: 0.35; transform: scale(0.8); }
       }
 
+      /* Marquee Viewport & Hardware-Accelerated Track */
       .ticker-container {
         position: relative;
         overflow: hidden;
@@ -193,7 +250,7 @@ class F1TickerCard extends HTMLElement {
         display: flex;
         white-space: nowrap;
         will-change: transform;
-        animation: tickerScroll var(--ticker-duration, 35s) linear infinite;
+        animation: tickerScroll var(--ticker-duration, 40s) linear infinite;
       }
       .ticker-container:hover .ticker-track {
         animation-play-state: paused;
@@ -202,11 +259,10 @@ class F1TickerCard extends HTMLElement {
         0% { transform: translate3d(0, 0, 0); }
         100% { transform: translate3d(-50%, 0, 0); }
       }
-      .ticker-content {
+      .ticker-group {
         display: inline-flex;
         align-items: center;
-        gap: 24px;
-        padding-right: 24px;
+        flex-shrink: 0;
       }
       .ticker-item {
         display: inline-flex;
@@ -214,17 +270,15 @@ class F1TickerCard extends HTMLElement {
         gap: 8px;
         font-size: 0.95rem;
         font-weight: 600;
-        letter-spacing: 0.02em;
+        letter-spacing: 0.03em;
         color: var(--f1-text, var(--primary-text-color, #e9edf3));
-        font-family: 'F1 Barlow Condensed', sans-serif;
       }
 
       /* F1 Weekend Hub standard chip tags */
       .tag {
-        font-family: 'F1 Barlow Condensed', sans-serif;
         font-size: 0.75rem;
         font-weight: 700;
-        letter-spacing: 0.04em;
+        letter-spacing: 0.05em;
         text-transform: uppercase;
         padding: 1px 6px;
         border: 1px solid currentColor;
@@ -233,19 +287,54 @@ class F1TickerCard extends HTMLElement {
         align-items: center;
         gap: 4px;
       }
+
+      /* Dynamic Track Status Colors */
+      .tag-track-clear {
+        color: #75dc94;
+        background: rgba(117, 220, 148, 0.16);
+        border-color: rgba(117, 220, 148, 0.5);
+      }
+      .tag-track-yellow {
+        color: #f0c632;
+        background: rgba(240, 198, 50, 0.2);
+        border-color: rgba(240, 198, 50, 0.6);
+      }
+      .tag-track-sc, .tag-track-vsc {
+        color: #f0c632;
+        background: rgba(240, 198, 50, 0.22);
+        border-color: rgba(240, 198, 50, 0.7);
+      }
+      .tag-track-blue {
+        color: #3978d5;
+        background: rgba(57, 120, 213, 0.16);
+        border-color: rgba(57, 120, 213, 0.5);
+      }
+      .tag-track-red {
+        color: #ef4444;
+        background: rgba(239, 68, 68, 0.28);
+        border-color: #ef4444;
+        animation: pulse-red 1.2s infinite ease-in-out;
+      }
+      @keyframes pulse-red {
+        0%, 100% { box-shadow: 0 0 4px rgba(239, 68, 68, 0.3); }
+        50% { box-shadow: 0 0 10px rgba(239, 68, 68, 0.7); }
+      }
+
+      /* Categorized Chips */
       .tag-rc { color: #d93636; background: rgba(217, 54, 54, 0.14); }
-      .tag-track { color: #75dc94; background: rgba(117, 220, 148, 0.14); }
       .tag-fastest { color: #c59aff; background: rgba(197, 154, 255, 0.14); }
       .tag-battle { color: #f6d65c; background: rgba(246, 214, 92, 0.14); }
       .tag-pit { color: #56aaff; background: rgba(86, 170, 255, 0.14); }
-      .tag-gold { color: #f6d65c; background: rgba(246, 214, 92, 0.14); }
       .tag-weather { color: #3978d5; background: rgba(57, 120, 213, 0.14); }
       .tag-lap { color: var(--f1-muted, #b9c1ce); background: rgba(127, 127, 127, 0.14); }
       .tag-fia { color: var(--f1-muted, #b9c1ce); background: rgba(127, 127, 127, 0.14); }
+      .tag-neutral { color: #75dc94; background: rgba(117, 220, 148, 0.14); }
 
       .separator {
         color: var(--f1-divider, rgba(127, 127, 127, 0.35));
-        font-size: 0.8rem;
+        font-size: 0.72rem;
+        margin: 0 14px;
+        user-select: none;
       }
     `;
 
@@ -258,78 +347,106 @@ class F1TickerCard extends HTMLElement {
             <span class="title-text">${this._config.title}</span>
             <span class="subtitle-text">${this._config.subtitle}</span>
           </div>
-          <div class="status-pill status-standby" id="status-pill">
-            <span class="pulse-dot"></span>
-            <span id="status-text">STANDBY</span>
+          <div class="status-pill status-before" id="status-pill">
+            <span id="status-text">BEFORE</span>
           </div>
         </div>
         <div class="ticker-container" id="ticker-box">
           <div class="ticker-track" id="ticker-track" style="--ticker-duration: ${this._config.speed || 35}s;">
-            <div class="ticker-content" id="content-1">Connecting to FIA Race Control stream...</div>
-            <div class="ticker-content" id="content-2">Connecting to FIA Race Control stream...</div>
+            <div class="ticker-group" id="content-1"></div>
+            <div class="ticker-group" id="content-2"></div>
           </div>
         </div>
       </ha-card>
     `;
+    this._lastSignature = null;
   }
 
   _updateContent() {
     if (!this._hass || !this.shadowRoot) return;
 
     const rc = this._hass.states[this._config.race_control_entity];
-    const inv = this._hass.states[this._config.investigations_entity];
-    const tl = this._hass.states[this._config.track_limits_entity];
     const track = this._hass.states[this._config.track_status_entity];
     const fia = this._hass.states[this._config.fia_documents_entity];
     const nextRace = this._hass.states[this._config.next_race_entity];
     const positions = this._hass.states[this._config.driver_positions_entity];
-    const pitstops = this._hass.states[this._config.pitstops_entity];
     const weather = this._hass.states[this._config.track_weather_entity];
     const lapCount = this._hass.states[this._config.lap_count_entity];
-    const replayMode = this._hass.states[this._config.replay_mode_entity];
-    const replayStatus = this._hass.states[this._config.replay_status_entity];
+    const replayMode = this._hass.states[this._config.replay_mode_entity] || this._hass.states['input_boolean.f1_replay_mode'];
+    const replayStatus = this._hass.states[this._config.replay_status_entity] || this._hass.states['sensor.f1_replay_status'];
+    const replayPlayer = this._hass.states['media_player.f1_replay_player'];
+    const sessionStatus = this._hass.states[this._config.session_status_entity] || this._hass.states['sensor.f1_session_status'];
 
     const isAvailable = (s) => s && s.state !== 'unavailable' && s.state !== 'unknown';
-    // Helper to check if a string is just a numeric count (like '1', '3', '0')
     const isPureNumber = (val) => {
       if (val === null || val === undefined) return true;
       const s = String(val).trim();
       return /^-?\d+(\.\d+)?$/.test(s);
     };
 
-    // 1. Determine Replay vs Live vs Standby status
-    const isReplay = (replayMode && replayMode.state === 'on') ||
-      (replayStatus && (replayStatus.state === 'playing' || replayStatus.state === 'paused'));
+    // 1. Determine Replay vs Live vs Before Mode
+    const isReplayMode = (
+      (replayMode && replayMode.state === 'on') ||
+      (replayStatus && isAvailable(replayStatus) && ['playing', 'paused', 'running'].includes(replayStatus.state.toLowerCase())) ||
+      (replayPlayer && isAvailable(replayPlayer) && ['playing', 'paused'].includes(replayPlayer.state.toLowerCase()))
+    );
 
-    let items = [];
-    let isLive = false;
+    let badgeClass = 'status-before';
+    let badgeHtml = 'BEFORE';
+
+    if (isReplayMode) {
+      const isPaused = (
+        (replayStatus && (replayStatus.state.toLowerCase() === 'paused' || (replayStatus.attributes && replayStatus.attributes.paused === true))) ||
+        (replayPlayer && replayPlayer.state.toLowerCase() === 'paused')
+      );
+      if (isPaused) {
+        badgeClass = 'status-replay-paused';
+        badgeHtml = '[REPLAY PAUSED]';
+      } else {
+        badgeClass = 'status-replay';
+        badgeHtml = '<span class="pulse-dot"></span> REPLAY RUNNING';
+      }
+    } else {
+      // Live Mode
+      const isLiveActive = sessionStatus && isAvailable(sessionStatus) && ['live', 'started'].includes(sessionStatus.state.toLowerCase());
+      if (isLiveActive) {
+        badgeClass = 'status-live';
+        badgeHtml = '<span class="pulse-dot"></span> LIVE SESSION';
+      } else {
+        badgeClass = 'status-before';
+        badgeHtml = 'BEFORE';
+      }
+    }
 
     // Drivers list from positions sensor
     const drivers = (positions && positions.attributes && Array.isArray(positions.attributes.drivers))
       ? positions.attributes.drivers
       : [];
 
-    // 2. Race Control Messages (Only include if actual text detail, not a pure number)
+    let items = [];
+
+    // 2. Race Control Messages (Text details only)
     if (this._config.show_race_control !== false && isAvailable(rc)) {
       const text = rc.state.trim();
       if (!isPureNumber(text) && text.length > 1 && text.toUpperCase() !== 'OFFLINE' && text.toUpperCase() !== 'NONE') {
         items.push({ tag: 'tag-rc', label: '🚨 RACE CONTROL', text: text });
-        isLive = true;
       }
     }
 
-    // 3. Track Status (Clear, Yellow, VSC, SC, Red)
+    // 3. Track Status with Dynamic Color Coding
     if (this._config.show_track_status !== false && isAvailable(track)) {
-      const state = track.state.trim().toUpperCase();
-      if (!isPureNumber(state) && state !== 'UNKNOWN') {
-        items.push({ tag: 'tag-track', label: '🚦 TRACK STATUS', text: state });
-        if (state !== 'CLEAR') {
-          isLive = true;
-        }
+      const rawTrack = track.state.trim().toUpperCase();
+      if (!isPureNumber(rawTrack) && rawTrack !== 'UNKNOWN') {
+        const trackConf = this._getTrackStatusConfig(rawTrack);
+        items.push({
+          tag: trackConf.tag,
+          label: trackConf.label,
+          text: trackConf.text,
+        });
       }
     }
 
-    // 4. Fastest Lap (Rich detail: Driver, Lap Time, Lap #)
+    // 4. Fastest Lap
     if (this._config.show_fastest_lap !== false && drivers.length > 0) {
       const flDriver = drivers.find(d => d.fastest_lap === true);
       if (flDriver) {
@@ -341,11 +458,10 @@ class F1TickerCard extends HTMLElement {
           label: '⚡ FASTEST LAP',
           text: `${flDriver.tla || flDriver.name} - ${time}${lapStr}`
         });
-        isLive = true;
       }
     }
 
-    // 5. On-Track Battles (Intervals < 1.2s / DRS range with specific drivers & gap)
+    // 5. On-Track Battles (Intervals <= 1.2s DRS range, stabilized to 1 decimal place)
     if (this._config.show_battles !== false && drivers.length > 1) {
       let battleCount = 0;
       for (let i = 1; i < drivers.length && battleCount < 3; i++) {
@@ -355,19 +471,19 @@ class F1TickerCard extends HTMLElement {
         if (interval.startsWith('+')) {
           const val = parseFloat(interval.replace('+', '').replace('s', ''));
           if (!isNaN(val) && val <= 1.2 && val > 0) {
+            const formattedInterval = `+${val.toFixed(1)}s`;
             items.push({
               tag: 'tag-battle',
               label: '⚔️ DRS BATTLE',
-              text: `P${ahead.current_position} ${ahead.tla} vs P${curr.current_position} ${curr.tla} (${interval})`
+              text: `P${ahead.current_position} ${ahead.tla} vs P${curr.current_position} ${curr.tla} (${formattedInterval})`
             });
             battleCount++;
-            isLive = true;
           }
         }
       }
     }
 
-    // 6. Pit Stops (ONLY show cars actively in pit lane; omit useless numeric counts like '0')
+    // 6. Pit Stops (Only active cars in pit lane)
     if (this._config.show_pit_stops !== false) {
       const inPitDrivers = drivers.filter(d => d.in_pit === true).map(d => d.tla || d.name);
       if (inPitDrivers.length > 0) {
@@ -376,29 +492,10 @@ class F1TickerCard extends HTMLElement {
           label: '🛞 IN PIT',
           text: `${inPitDrivers.join(', ')} in pit lane`
         });
-        isLive = true;
       }
     }
 
-    // 7. Steward Investigations (Only if actual descriptive text exists, never a bare count)
-    if (this._config.show_investigations === true && isAvailable(inv)) {
-      const text = (inv.attributes && inv.attributes.message) ? inv.attributes.message : inv.state.trim();
-      if (!isPureNumber(text) && text.length > 1) {
-        items.push({ tag: 'tag-rc', label: '🔍 INVESTIGATION', text: text });
-        isLive = true;
-      }
-    }
-
-    // 8. Track Limits (Only if actual descriptive event text exists, never a bare count)
-    if (this._config.show_track_limits === true && isAvailable(tl)) {
-      const text = (tl.attributes && tl.attributes.message) ? tl.attributes.message : tl.state.trim();
-      if (!isPureNumber(text) && text.length > 1) {
-        items.push({ tag: 'tag-rc', label: '🛑 TRACK LIMITS', text: text });
-        isLive = true;
-      }
-    }
-
-    // 9. Lap & Session Progress
+    // 7. Lap Count
     if (this._config.show_lap_count === true && isAvailable(lapCount)) {
       const total = lapCount.attributes && lapCount.attributes.total_laps ? ` / ${lapCount.attributes.total_laps}` : '';
       items.push({
@@ -406,10 +503,9 @@ class F1TickerCard extends HTMLElement {
         label: '🏁 LAP',
         text: `${lapCount.state}${total}`
       });
-      isLive = true;
     }
 
-    // 10. Track Weather
+    // 8. Track Weather
     if (this._config.show_weather === true && isAvailable(weather) && weather.attributes) {
       const tTrack = weather.attributes.track_temperature;
       const tAir = weather.attributes.air_temperature;
@@ -427,7 +523,7 @@ class F1TickerCard extends HTMLElement {
       }
     }
 
-    // 11. FIA Decision Documents (Use full document title, never just a document number)
+    // 9. FIA Decision Documents
     if (this._config.show_fia_documents === true && isAvailable(fia)) {
       const title = (fia.attributes && fia.attributes.name) ? fia.attributes.name : null;
       if (title && !isPureNumber(title)) {
@@ -435,59 +531,125 @@ class F1TickerCard extends HTMLElement {
       }
     }
 
-    // 12. Next Race Countdown (Formatted race name and location, not raw timestamp)
+    // 10. Next Race Countdown
     if (this._config.show_next_race === true && isAvailable(nextRace)) {
       const rName = (nextRace.attributes && nextRace.attributes.race_name) ? nextRace.attributes.race_name : null;
       const rLoc = (nextRace.attributes && nextRace.attributes.circuit_locality) ? nextRace.attributes.circuit_locality : null;
       if (rName) {
         const text = rLoc ? `${rName} (${rLoc})` : rName;
-        items.push({ tag: 'tag-track', label: '🏁 NEXT GP', text: text });
+        items.push({ tag: 'tag-neutral', label: '🏁 NEXT GP', text: text });
       }
     }
 
     // Fallback if no items currently active
     if (items.length === 0) {
       if (isAvailable(track) && !isPureNumber(track.state)) {
-        items.push({ tag: 'tag-track', label: 'TRACK STATUS', text: track.state.toUpperCase() });
+        const trackConf = this._getTrackStatusConfig(track.state);
+        items.push({ tag: trackConf.tag, label: trackConf.label, text: trackConf.text });
       }
       if (isAvailable(nextRace) && nextRace.attributes && nextRace.attributes.race_name) {
-        items.push({ tag: 'tag-fia', label: 'NEXT GP', text: nextRace.attributes.race_name });
+        items.push({ tag: 'tag-neutral', label: '🏁 NEXT GP', text: nextRace.attributes.race_name });
       }
-      items.push({ tag: 'tag-track', label: 'STANDBY', text: 'No active track sessions or incident notices' });
-    }
-
-    // Update Status Pill
-    const statusPill = this.shadowRoot.getElementById('status-pill');
-    const statusText = this.shadowRoot.getElementById('status-text');
-
-    if (statusPill && statusText) {
-      if (isReplay) {
-        statusPill.className = 'status-pill status-replay';
-        statusText.innerHTML = (replayStatus && replayStatus.state === 'paused') ? '↶ REPLAY (PAUSED)' : '↶ REPLAY';
-      } else if (isLive) {
-        statusPill.className = 'status-pill status-live';
-        statusText.innerHTML = '<span class="pulse-dot"></span> LIVE SESSION';
+      if (isReplayMode) {
+        items.push({ tag: 'tag-replay', label: '↶ REPLAY', text: 'No active incident notices for current replay session' });
       } else {
-        statusPill.className = 'status-pill status-standby';
-        statusText.innerHTML = '✓ STANDBY';
+        items.push({ tag: 'tag-neutral', label: 'BEFORE', text: 'Waiting for live track session to start' });
       }
     }
 
-    // Generate HTML for marquee items
-    const html = items.map(item => `
+    // Generate Signature to avoid resetting continuous animation on untouched ticks
+    const signature = JSON.stringify({
+      badgeHtml,
+      badgeClass,
+      items,
+      speed: this._config.speed || 35,
+    });
+
+    if (this._lastSignature === signature) {
+      return; // Data has not changed: preserve ongoing marquee animation without resetting
+    }
+    this._lastSignature = signature;
+
+    // Update Status Badge
+    const statusPill = this.shadowRoot.getElementById('status-pill');
+    if (statusPill) {
+      statusPill.className = `status-pill ${badgeClass}`;
+      statusPill.innerHTML = badgeHtml;
+    }
+
+    // Build base HTML sequence for items
+    const baseHtml = items.map(item => `
       <span class="ticker-item">
         <span class="tag ${item.tag}">${item.label}</span>
         <span>${item.text}</span>
       </span>
-      <span class="separator">•</span>
+      <span class="separator">◆</span>
     `).join('');
+
+    // Ensure each content group repeats enough times to exceed any widescreen viewport (min 2500px)
+    const repeatCount = Math.max(3, Math.ceil(2400 / Math.max(300, items.length * 160)));
+    const repeatedHtml = baseHtml.repeat(repeatCount);
 
     const c1 = this.shadowRoot.getElementById('content-1');
     const c2 = this.shadowRoot.getElementById('content-2');
-    if (c1 && c2 && c1.innerHTML !== html) {
-      c1.innerHTML = html;
-      c2.innerHTML = html;
+    const trackElem = this.shadowRoot.getElementById('ticker-track');
+
+    if (c1 && c2 && trackElem) {
+      c1.innerHTML = repeatedHtml;
+      c2.innerHTML = repeatedHtml;
+
+      // Adjust animation duration proportionally to group width for uniform speed
+      requestAnimationFrame(() => {
+        const width = c1.offsetWidth || 1800;
+        const speed = parseInt(this._config.speed, 10) || 35;
+        const duration = Math.max(15, Math.round(width / speed));
+        trackElem.style.setProperty('--ticker-duration', `${duration}s`);
+      });
     }
+  }
+
+  _getTrackStatusConfig(raw) {
+    const s = String(raw || '').trim().toUpperCase();
+    if (s.includes('RED')) {
+      return {
+        tag: 'tag-track-red',
+        label: '🛑 RED FLAG',
+        text: s.includes('FLAG') ? s : 'RED FLAG - SESSION SUSPENDED',
+      };
+    }
+    if (s === 'SC' || (s.includes('SAFETY') && !s.includes('VIRTUAL'))) {
+      return {
+        tag: 'tag-track-sc',
+        label: '⚠️ SAFETY CAR',
+        text: s.includes('SAFETY') ? s : 'SAFETY CAR DEPLOYED',
+      };
+    }
+    if (s === 'VSC' || s.includes('VIRTUAL')) {
+      return {
+        tag: 'tag-track-vsc',
+        label: '⚠️ VSC',
+        text: s.includes('VSC') || s.includes('VIRTUAL') ? s : 'VIRTUAL SAFETY CAR DEPLOYED',
+      };
+    }
+    if (s.includes('YELLOW')) {
+      return {
+        tag: 'tag-track-yellow',
+        label: '⚑ YELLOW FLAG',
+        text: s.includes('FLAG') ? s : 'YELLOW FLAG',
+      };
+    }
+    if (s.includes('BLUE')) {
+      return {
+        tag: 'tag-track-blue',
+        label: '⚑ BLUE FLAG',
+        text: s,
+      };
+    }
+    return {
+      tag: 'tag-track-clear',
+      label: '✓ TRACK STATUS',
+      text: (s === 'CLEAR' || s === 'GREEN') ? 'TRACK CLEAR' : s,
+    };
   }
 
   getCardSize() {
@@ -608,7 +770,7 @@ class F1TickerCardEditor extends HTMLElement {
           <input type="text" class="input-text" id="subtitle" value="${this._config.subtitle || ''}" placeholder="INCIDENTS & TRACK LIMITS">
         </div>
         <div class="input-group">
-          <label class="label-title">Scroll Speed (seconds per loop: 15–90s)</label>
+          <label class="label-title">Scroll Speed (px/sec, default: 35)</label>
           <input type="number" class="input-text" id="speed" min="10" max="120" value="${this._config.speed || 35}">
         </div>
 
@@ -628,7 +790,7 @@ class F1TickerCardEditor extends HTMLElement {
         <div class="config-row">
           <div class="config-label">
             <span class="label-title">🚦 Track Status</span>
-            <span class="label-desc">Global track state flags (Clear, Yellow, VSC, SC, Red)</span>
+            <span class="label-desc">Dynamic color-coded track state flags (Clear, Yellow, VSC, SC, Red)</span>
           </div>
           <label class="switch">
             <input type="checkbox" id="show_track_status" ${this._config.show_track_status !== false ? 'checked' : ''}>
@@ -639,7 +801,7 @@ class F1TickerCardEditor extends HTMLElement {
         <div class="config-row">
           <div class="config-label">
             <span class="label-title">⚡ Fastest Lap</span>
-            <span class="label-desc">Current fastest lap driver, sector time & lap number</span>
+            <span class="label-desc">Current fastest lap driver, sector time & lap number in signature purple</span>
           </div>
           <label class="switch">
             <input type="checkbox" id="show_fastest_lap" ${this._config.show_fastest_lap !== false ? 'checked' : ''}>
@@ -763,7 +925,7 @@ if (!customElements.get('f1-ticker-card')) {
   window.customCards.push({
     type: 'f1-ticker-card',
     name: 'F1 Race Control Ticker Card',
-    description: 'Hardware-accelerated marquee banner for live F1 race control, steward notices, fastest laps, DRS battles and track status matching F1 Weekend Hub standards',
+    description: 'Hardware-accelerated continuous marquee banner for live F1 race control, steward notices, fastest laps, DRS battles and dynamic track status matching F1 Weekend Hub standards',
     preview: true,
   });
 }
