@@ -1,6 +1,6 @@
 /**
  * F1 Live Race Control Ticker Card (f1-ticker-card)
- * Version: 1.8.0
+ * Version: 1.9.0
  * 
  * Hardware-accelerated continuous 60fps single-message conveyor ticker.
  * Natively matches Nicxe/f1_sensor design system with authentic Formula 1 typography,
@@ -368,6 +368,12 @@ class F1TickerCard extends HTMLElement {
       .tag-rc {
         color: #ff3b30;
       }
+      .tag-blue-flag {
+        color: #38bdf8;
+      }
+      .tag-track-limits {
+        color: #f59e0b;
+      }
       .tag-track-clear {
         color: #34c759;
       }
@@ -413,6 +419,19 @@ class F1TickerCard extends HTMLElement {
         margin: 0 16px;
         user-select: none;
         flex-shrink: 0;
+      }
+
+      /* Compact styling for high-frequency bulletins (blue flags, track limits) */
+      .ticker-unit.unit-compact .ticker-item {
+        font-size: 0.82rem;
+        gap: 6px;
+      }
+      .ticker-unit.unit-compact .tag {
+        font-size: 0.60rem;
+        padding: 2px 7px;
+      }
+      .ticker-unit.unit-compact .separator {
+        margin: 0 10px;
       }
     `;
 
@@ -559,7 +578,7 @@ class F1TickerCard extends HTMLElement {
 
   _createItemElement(item) {
     const unit = document.createElement('div');
-    unit.className = 'ticker-unit';
+    unit.className = 'ticker-unit' + (item.is_compact ? ' unit-compact' : '');
     unit.setAttribute('data-id', item.id);
     unit.setAttribute('data-sig', `${item.id}::${item.text}`);
     unit.innerHTML = `
@@ -574,6 +593,11 @@ class F1TickerCard extends HTMLElement {
 
   _updateItemElement(unit, item) {
     if (!unit || !item) return;
+    if (item.is_compact) {
+      unit.classList.add('unit-compact');
+    } else {
+      unit.classList.remove('unit-compact');
+    }
     const textEl = unit.querySelector('.ticker-text');
     if (textEl && textEl.textContent !== item.text) {
       textEl.textContent = item.text;
@@ -773,33 +797,27 @@ class F1TickerCard extends HTMLElement {
 
     const items = [];
 
-    // 4. Race Control Messages (Text details only, compact trimmed & capped to latest 2)
+    // 4. Race Control Messages (Text details only, compact trimmed & deduplicated)
     if (this._config.show_race_control !== false && isAvailable(rc)) {
-      const cleanRcText = (raw) => {
-        return (raw || '').trim()
-          .replace(/INCIDENT INVOLVING CAR /gi, 'CAR ')
-          .replace(/INCIDENT UNDER INVESTIGATION/gi, 'INVESTIGATION')
-          .replace(/INCIDENT NOTED/gi, 'NOTED')
-          .replace(/NO FURTHER ACTION REQUIRED/gi, 'NO FURTHER ACTION')
-          .replace(/TURN (\d+)/gi, 'T$1')
-          .replace(/\s+/g, ' ')
-          .trim();
-      };
-
+      const seenRcIds = new Set();
       if (rc.attributes && Array.isArray(rc.attributes.history) && rc.attributes.history.length > 0) {
-        // Capped to latest 2 newest notices to prevent clutter
-        const recentMsgs = rc.attributes.history.slice(0, 2);
-        recentMsgs.forEach(m => {
-          const text = cleanRcText(m.message);
-          if (!isPureNumber(text) && text.length > 1 && text.toUpperCase() !== 'OFFLINE' && text.toUpperCase() !== 'NONE') {
-            const key = m.event_id || text;
-            items.push({ id: `rc-${key}`, tag: 'tag-rc', label: '🚨 RACE CONTROL', text });
+        // Inspect up to 5 newest notices, deduplicating repetitive alerts (e.g. repeated blue flags for same car)
+        for (const m of rc.attributes.history.slice(0, 5)) {
+          const parsed = this._parseRcMessage(m.message, m.event_id);
+          if (parsed && !isPureNumber(parsed.text) && parsed.text.length > 1) {
+            if (!seenRcIds.has(parsed.id)) {
+              seenRcIds.add(parsed.id);
+              items.push(parsed);
+              if (items.filter(it => it.tag.startsWith('tag-rc') || it.tag === 'tag-blue-flag' || it.tag === 'tag-track-limits').length >= 2) {
+                break; // Cap to 2 newest active race control bulletins
+              }
+            }
           }
-        });
+        }
       } else {
-        const text = cleanRcText(rc.state);
-        if (!isPureNumber(text) && text.length > 1 && text.toUpperCase() !== 'OFFLINE' && text.toUpperCase() !== 'NONE') {
-          items.push({ id: `rc-${text}`, tag: 'tag-rc', label: '🚨 RACE CONTROL', text });
+        const parsed = this._parseRcMessage(rc.state);
+        if (parsed && !isPureNumber(parsed.text) && parsed.text.length > 1) {
+          items.push(parsed);
         }
       }
     }
@@ -950,6 +968,99 @@ class F1TickerCard extends HTMLElement {
 
     // Sync track items
     this._syncTrack(items);
+  }
+
+  _parseRcMessage(rawMsg, eventId) {
+    const raw = (rawMsg || '').trim();
+    if (!raw || ['OFFLINE', 'NONE', 'UNKNOWN'].includes(raw.toUpperCase())) {
+      return null;
+    }
+
+    // 1. Blue flag detection & compacting
+    if (/BLUE\s+FLAG/i.test(raw)) {
+      const driverMatch = raw.match(/CAR\s+(\d+)(?:\s*\(([A-Z]{3})\))?/i);
+      let driverStr = '';
+      let carKey = 'unknown';
+      if (driverMatch) {
+        const carNo = driverMatch[1];
+        const tla = driverMatch[2];
+        driverStr = tla ? `${tla} (#${carNo})` : `CAR #${carNo}`;
+        carKey = carNo;
+      } else {
+        driverStr = raw
+          .replace(/WAVED\s+BLUE\s+FLAG\s+FOR/gi, '')
+          .replace(/BLUE\s+FLAG\s+FOR/gi, '')
+          .replace(/BLUE\s+FLAG\s*-/gi, '')
+          .replace(/TIMED\s+AT\s+\d+:\d+:\d+/gi, '')
+          .trim();
+        carKey = driverStr;
+      }
+      return {
+        id: `rc-blue-${carKey}`,
+        tag: 'tag-blue-flag',
+        label: '🟦 BLUE FLAG',
+        text: driverStr,
+        is_compact: true
+      };
+    }
+
+    // 2. Track limits / lap time deleted & compacting
+    if (/TRACK\s+LIMITS?/i.test(raw) || (/DELETED/i.test(raw) && /TIME/i.test(raw))) {
+      const driverMatch = raw.match(/CAR\s+(\d+)(?:\s*\(([A-Z]{3})\))?/i);
+      const turnMatch = raw.match(/(?:AT\s+)?TURN\s+(\d+)/i);
+      const lapMatch = raw.match(/LAP\s+(\d+)/i);
+
+      let carStr = '';
+      let carKey = 'unknown';
+      if (driverMatch) {
+        const carNo = driverMatch[1];
+        const tla = driverMatch[2];
+        carStr = tla ? `${tla} (#${carNo})` : `CAR #${carNo}`;
+        carKey = carNo;
+      }
+
+      const turnStr = turnMatch ? `T${turnMatch[1]}` : '';
+      const lapStr = lapMatch ? `(L${lapMatch[1]})` : '';
+
+      const parts = [];
+      if (carStr) parts.push(carStr);
+      if (turnStr) parts.push(turnStr);
+      if (/DELETED/i.test(raw)) {
+        parts.push('LAP DELETED');
+      } else {
+        parts.push('TRACK LIMITS');
+      }
+
+      const formattedText = parts.filter(p => !p.startsWith('(')).join(' • ') + (lapStr ? ` ${lapStr}` : '');
+      const key = eventId || `${carKey}-${turnStr || 'tl'}`;
+
+      return {
+        id: `rc-tl-${key}`,
+        tag: 'tag-track-limits',
+        label: '⚠️ TRACK LIMITS',
+        text: formattedText,
+        is_compact: true
+      };
+    }
+
+    // 3. Standard Race Control incidents
+    const cleanText = raw
+      .replace(/INCIDENT INVOLVING CAR /gi, 'CAR ')
+      .replace(/INCIDENT UNDER INVESTIGATION/gi, 'INVESTIGATION')
+      .replace(/INCIDENT NOTED/gi, 'NOTED')
+      .replace(/NO FURTHER ACTION REQUIRED/gi, 'NO FURTHER ACTION')
+      .replace(/TURN (\d+)/gi, 'T$1')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const key = eventId || cleanText;
+    return {
+      id: `rc-${key}`,
+      tag: 'tag-rc',
+      label: '🚨 RACE CONTROL',
+      text: cleanText,
+      is_compact: false
+    };
   }
 
   _getTrackStatusConfig(raw) {
@@ -1269,4 +1380,10 @@ if (!customElements.get('f1-ticker-card')) {
     description: 'Ultra-smooth 60fps continuous ticker for live F1 race control, steward notices, fastest laps, DRS battles and track status with official Formula 1 typography',
     preview: true,
   });
+  console.info(
+    '%c F1-TICKER-CARD %c v1.9.0 ',
+    'color: white; background: #e10600; font-weight: 700;',
+    'color: #040711; background: #38bdf8; font-weight: 700;'
+  );
 }
+
