@@ -1,6 +1,6 @@
 /**
  * F1 Live Race Control Ticker Card (f1-ticker-card)
- * Version: 1.7.0
+ * Version: 1.8.0
  * 
  * Hardware-accelerated continuous 60fps single-message conveyor ticker.
  * Natively matches Nicxe/f1_sensor design system with authentic Formula 1 typography,
@@ -293,27 +293,47 @@ class F1TickerCard extends HTMLElement {
         cursor: default;
         user-select: none;
       }
-      .ticker-track {
+      .ticker-idle-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
         display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        pointer-events: none;
+        opacity: 0.75;
+        transition: opacity 0.25s ease;
+        z-index: 1;
+        font-family: 'Formula1 Wide', 'Formula1 Display', sans-serif !important;
+        font-size: 0.7rem;
+        letter-spacing: 0.05em;
+        user-select: none;
+      }
+      .ticker-idle-overlay.hidden {
+        opacity: 0;
+        visibility: hidden;
+      }
+      .ticker-track {
+        display: inline-flex;
         align-items: center;
         white-space: nowrap;
         will-change: transform;
-        transform: translate3d(0, 0, 0);
+        position: relative;
+        z-index: 2;
+        width: max-content;
       }
       .ticker-unit {
         display: inline-flex;
         align-items: center;
         flex-shrink: 0;
       }
-      .ticker-spacer {
+      .ticker-gap {
         display: inline-block;
         flex-shrink: 0;
         height: 1px;
-      }
-      .ticker-idle {
-        opacity: 0.75;
-        letter-spacing: 0.05em;
-        user-select: none;
       }
       .ticker-item {
         display: inline-flex;
@@ -410,6 +430,10 @@ class F1TickerCard extends HTMLElement {
           </div>
         </div>
         <div class="ticker-container" id="ticker-box">
+          <div class="ticker-idle-overlay" id="ticker-idle">
+            <span class="tag tag-clear">🟢 TRACK CLEAR</span>
+            <span class="ticker-text">MONITORING RACE CONTROL</span>
+          </div>
           <div class="ticker-track" id="ticker-track"></div>
         </div>
       </ha-card>
@@ -443,12 +467,19 @@ class F1TickerCard extends HTMLElement {
     this._lastTime = now;
 
     if (!document.hidden && !this._isPaused && this._trackElem) {
-      const realUnits = Array.from(this._trackElem.querySelectorAll('.ticker-unit:not([data-id="spacer"]):not([data-id="idle"])'));
+      const realUnits = Array.from(this._trackElem.querySelectorAll('.ticker-unit:not([data-id="gap"])'));
       const activeCount = realUnits.length;
 
-      if (activeCount > 0) {
+      // Handle idle overlay state
+      const idleOverlay = this.shadowRoot.getElementById('ticker-idle');
+      if (activeCount === 0 && this._trackElem.children.length === 0) {
+        if (idleOverlay) idleOverlay.classList.remove('hidden');
+      } else {
+        if (idleOverlay) idleOverlay.classList.add('hidden');
+      }
+
+      if (this._trackElem.children.length > 0) {
         const baseSpeed = parseInt(this._config?.speed, 10) || 40;
-        // Adaptive Speed Governor: accelerate up to 75 px/s if queue surges
         let targetSpeed = baseSpeed;
         if (activeCount >= 3) {
           targetSpeed = Math.min(75, baseSpeed + (activeCount - 2) * 12);
@@ -470,14 +501,12 @@ class F1TickerCard extends HTMLElement {
             const id = firstChild.getAttribute('data-id');
             const sig = firstChild.getAttribute('data-sig');
 
-            if (id === 'spacer' || id === 'idle') {
-              if (id === 'spacer' && this._needsSpacer()) {
-                this._trackElem.appendChild(firstChild);
-              }
+            if (id === 'gap') {
+              // Entrance gap exited left edge: simply continue
               continue;
             }
 
-            // SINGLE-PASS RETIREMENT: Mark signature as retired
+            // Real telemetry unit: record signature as permanently retired
             if (sig) {
               this._retiredSignatures.add(sig);
               if (this._retiredSignatures.size > 80) {
@@ -485,78 +514,47 @@ class F1TickerCard extends HTMLElement {
                 this._retiredSignatures.delete(oldest);
               }
             }
-            // DO NOT RE-APPEND TO TRACK! The item has cleanly completed its single pass.
           } else {
             break;
           }
         }
 
         this._trackElem.style.transform = `translate3d(-${this._scrollPos.toFixed(2)}px, 0, 0)`;
-      } else {
-        // Track is empty: show idle placeholder if no items remain
-        const idleEl = this._trackElem.querySelector('.ticker-idle');
-        if (!idleEl && this._trackElem.children.length === 0) {
-          const idleUnit = document.createElement('div');
-          idleUnit.className = 'ticker-unit ticker-idle';
-          idleUnit.setAttribute('data-id', 'idle');
-          idleUnit.innerHTML = `
-            <span class="ticker-item">
-              <span class="tag tag-clear">🟢 TRACK CLEAR</span>
-              <span class="ticker-text">MONITORING RACE CONTROL</span>
-            </span>
-          `;
-          this._trackElem.appendChild(idleUnit);
-          this._scrollPos = 0;
-          this._trackElem.style.transform = 'translate3d(0, 0, 0)';
-        }
       }
     }
 
     this._animFrame = requestAnimationFrame(this._tick);
   }
 
-  _needsSpacer() {
-    if (!this._trackElem) return false;
+  _getContainerWidth() {
     const box = this.shadowRoot.getElementById('ticker-box');
-    const containerWidth = (box && box.offsetWidth) ? box.offsetWidth : 1200;
-    
-    let totalItemsWidth = 0;
-    Array.from(this._trackElem.querySelectorAll('.ticker-unit')).forEach(u => {
-      totalItemsWidth += u.getBoundingClientRect().width;
-    });
-
-    return totalItemsWidth < containerWidth;
+    return (box && box.offsetWidth > 0) ? box.offsetWidth : (window.innerWidth || 1200);
   }
 
-  _updateSpacer() {
-    if (!this._trackElem) return;
-    const box = this.shadowRoot.getElementById('ticker-box');
-    const containerWidth = (box && box.offsetWidth) ? box.offsetWidth : 1200;
+  _appendWithEntranceGap(newUnit) {
+    const containerWidth = this._getContainerWidth();
 
-    let totalItemsWidth = 0;
-    let minItemWidth = 200;
-    const units = Array.from(this._trackElem.querySelectorAll('.ticker-unit'));
-    units.forEach(u => {
-      const w = u.getBoundingClientRect().width;
-      totalItemsWidth += w;
-      if (w > 0 && w < minItemWidth) minItemWidth = w;
+    // 1. Calculate current screen-space right edge of existing items
+    let currentTrackWidth = 0;
+    Array.from(this._trackElem.children).forEach(el => {
+      currentTrackWidth += el.getBoundingClientRect().width;
     });
 
-    let spacer = this._trackElem.querySelector('.ticker-spacer');
-    if (totalItemsWidth < containerWidth) {
-      const neededSpacerWidth = Math.max(120, containerWidth - (totalItemsWidth - minItemWidth) + 80);
-      if (!spacer) {
-        spacer = document.createElement('div');
-        spacer.className = 'ticker-spacer';
-        spacer.setAttribute('data-id', 'spacer');
-        this._trackElem.appendChild(spacer);
-      }
-      spacer.style.width = `${neededSpacerWidth.toFixed(0)}px`;
-    } else {
-      if (spacer) {
-        this._trackElem.removeChild(spacer);
-      }
+    const currentScreenRight = currentTrackWidth - this._scrollPos;
+
+    // 2. If existing content ends inside visible screen (or track is empty),
+    // inject an entrance gap so newUnit starts beyond the right edge of the screen!
+    if (currentScreenRight < containerWidth) {
+      const neededGap = Math.ceil(containerWidth - currentScreenRight + 40);
+      const gap = document.createElement('div');
+      gap.className = 'ticker-gap';
+      gap.setAttribute('data-id', 'gap');
+      gap.style.width = `${neededGap}px`;
+      this._trackElem.appendChild(gap);
     }
+
+    // 3. Append the new item!
+    this._trackElem.appendChild(newUnit);
   }
 
   _createItemElement(item) {
@@ -603,41 +601,29 @@ class F1TickerCard extends HTMLElement {
 
     this._activeItems = new Map(unretiredItems.map(item => [item.id, item]));
 
-    // 2. Remove idle placeholder if real unretired items arrive
-    const idleEl = this._trackElem.querySelector('.ticker-idle');
-    if (unretiredItems.length > 0 && idleEl) {
-      this._trackElem.removeChild(idleEl);
-      this._scrollPos = 0;
-    }
+    // 2. Manage Idle Overlay
+    const idleOverlay = this.shadowRoot.getElementById('ticker-idle');
+    const currentUnits = Array.from(this._trackElem.querySelectorAll('.ticker-unit:not([data-id="gap"])'));
 
-    // 3. Initial boot, empty track, or post-jump reset
-    const currentUnits = this._trackElem.querySelectorAll('.ticker-unit:not([data-id="spacer"]):not([data-id="idle"])');
-    if (currentUnits.length === 0) {
-      if (unretiredItems.length === 0) {
-        if (!idleEl && this._trackElem.children.length === 0) {
-          const idleUnit = document.createElement('div');
-          idleUnit.className = 'ticker-unit ticker-idle';
-          idleUnit.setAttribute('data-id', 'idle');
-          idleUnit.innerHTML = `
-            <span class="ticker-item">
-              <span class="tag tag-clear">🟢 TRACK CLEAR</span>
-              <span class="ticker-text">MONITORING RACE CONTROL</span>
-            </span>
-          `;
-          this._trackElem.appendChild(idleUnit);
-          this._scrollPos = 0;
-          this._trackElem.style.transform = 'translate3d(0, 0, 0)';
-        }
-        return;
-      }
-      unretiredItems.forEach(item => {
-        this._trackElem.appendChild(this._createItemElement(item));
-      });
-      requestAnimationFrame(() => this._updateSpacer());
+    if (unretiredItems.length === 0 && currentUnits.length === 0) {
+      if (idleOverlay) idleOverlay.classList.remove('hidden');
       return;
     }
 
-    // 4. Track is moving: update existing units in-place if their signature evolved
+    if (idleOverlay) {
+      idleOverlay.classList.add('hidden');
+    }
+
+    // 3. Track is empty: add all incoming items with entrance gap (starts beyond right edge)
+    if (currentUnits.length === 0) {
+      unretiredItems.forEach(item => {
+        const newUnit = this._createItemElement(item);
+        this._appendWithEntranceGap(newUnit);
+      });
+      return;
+    }
+
+    // 4. Track is already moving: update existing units in-place if their signature evolved
     const existingIds = new Set();
     currentUnits.forEach(child => {
       const id = child.getAttribute('data-id');
@@ -648,24 +634,13 @@ class F1TickerCard extends HTMLElement {
       }
     });
 
-    // 5. Add brand new unretired items to the entrance of the ticker (right edge)
-    const spacer = this._trackElem.querySelector('.ticker-spacer');
-    let addedNew = false;
+    // 5. Add brand new unretired items to the entrance of the ticker (beyond right edge)
     unretiredItems.forEach(item => {
       if (!existingIds.has(item.id)) {
         const newUnit = this._createItemElement(item);
-        if (spacer) {
-          this._trackElem.insertBefore(newUnit, spacer);
-        } else {
-          this._trackElem.appendChild(newUnit);
-        }
-        addedNew = true;
+        this._appendWithEntranceGap(newUnit);
       }
     });
-
-    if (addedNew) {
-      requestAnimationFrame(() => this._updateSpacer());
-    }
   }
 
   _updateContent() {
