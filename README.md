@@ -1,23 +1,24 @@
 # F1 Race Control Ticker Card (`custom:f1-ticker-card`)
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/default)
-[![version](https://img.shields.io/badge/version-1.1.0-e10600.svg)](https://github.com)
+[![version](https://img.shields.io/badge/version-1.4.0-e10600.svg)](https://github.com)
 [![license](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.1%2B-blue.svg)](https://www.home-assistant.io)
 
 A smooth, hardware-accelerated animated marquee ticker card for Formula 1 race control announcements, steward investigations, track limits warnings, fastest laps, DRS battles, pit stops, track status flags, weather, and FIA bulletins in Home Assistant Lovelace dashboards.
 
-Designed specifically to match the official **Formula 1 Pit Wall** aesthetic with dark gradients, signature FIA badges, and red accent borders (`#e10600`).
+Designed specifically to match the official **Formula 1 Weekend Hub / Pit Wall** design standards with embedded official Formula 1 typography (`Formula1 Display` and `Formula1 Wide`), dynamic track status colors, and dark surface styling (`#15151e`).
 
 ---
 
 ## ✨ Features
 
-- 🏎️ **Native Shadow DOM Marquee**: 60 FPS hardware-accelerated CSS marquee animation that will never be stripped or broken by Home Assistant's DOMPurify sanitizer.
+- 🏎️ **Ultra-Smooth 60 FPS requestAnimationFrame Engine**: Unlike CSS marquees that reset or stutter on Home Assistant state changes, the custom rAF loop continuously maintains scroll position seamlessly through live/replay telemetry updates.
+- 🔤 **Authentic Formula 1 Typography**: Embedded WOFF2 fonts matching `Nicxe/f1_sensor` (`Formula1 Display` for body/values and `Formula1 Wide` for titles/badges).
 - 🔴 **Smart Session Mode Pill**: The status badge in the corner automatically detects session state:
-  - **`⏪ REPLAY`** / **`REPLAY (PAUSED)`** (Cyan badge): When watching a recorded session via Replay mode (`input_boolean.f1_replay_mode` or `sensor.f1_replay_status`).
+  - **`⏪ REPLAY RUNNING`** / **`[REPLAY PAUSED]`** (Cyan badge): When watching a recorded session via Replay mode (`input_boolean.f1_replay_mode` or `sensor.f1_replay_status`).
   - **`🔴 LIVE SESSION`** (Red pulsing badge): During live on-track Grand Prix sessions.
-  - **`🟢 STANDBY`** (Emerald badge): Between race weekends or when sessions are idle.
+  - **`🟢 BEFORE`** (Emerald badge): Pre-session or idle track state.
 - 🎛️ **Full Visual UI Editor**: Configure scroll speed, titles, and pick exactly which ticker categories appear directly from the dashboard card settings UI without writing YAML.
 - 🔘 **Granular Category Toggles**:
   - 🚨 **Race Control Messages**: Official race director flags, safety cars, and instructions

@@ -1,22 +1,48 @@
 /**
  * F1 Live Race Control Ticker Card (f1-ticker-card)
- * Version: 1.3.0
+ * Version: 1.4.0
  * 
- * Hardware-accelerated continuous marquee ticker matching official F1 Weekend Hub standards
- * for typography ('F1 Barlow Condensed'), palette, borders, surfaces, dynamic track status boxes,
- * and intelligent replay vs. live session status badges.
+ * Hardware-accelerated continuous 60fps requestAnimationFrame marquee ticker.
+ * Natively integrates official Formula 1 typography ('Formula1 Display' and 'Formula1 Wide')
+ * matching the Nicxe/f1_sensor design system with dynamic track status colors and intelligent
+ * replay vs. live session status badges.
  */
 
-function ensureF1Typography() {
-  if (window._f1TypographyInitialized) return;
-  window._f1TypographyInitialized = true;
+// Automated font loader matching Nicxe/f1_sensor
+async function ensureF1Fonts() {
+  if (typeof window === 'undefined') return;
+  if (window._f1FontsLoaded || document.querySelector('style[data-f1-fonts]')) {
+    window._f1FontsLoaded = true;
+    return;
+  }
 
+  // 1. Injected @font-face definition from f1_sensor bundle
+  try {
+    const res = await fetch('/local/f1-sensor-live-data-card/f1-sensor-live-data-card.js');
+    if (res.ok) {
+      const text = await res.text();
+      const start = text.indexOf('@font-face');
+      const end = text.indexOf('`;', start);
+      if (start !== -1 && end !== -1) {
+        const fontCss = text.substring(start, end).trim();
+        const style = document.createElement('style');
+        style.setAttribute('data-f1-fonts', 'true');
+        style.id = 'f1-sensor-official-fonts';
+        style.textContent = fontCss;
+        document.head.appendChild(style);
+        window._f1FontsLoaded = true;
+        return;
+      }
+    }
+  } catch (e) {
+    console.debug('Could not stream fonts from f1-sensor-live-data-card bundle:', e);
+  }
+
+  // 2. Fallback to F1 Barlow Condensed and Google Fonts
   const fontUrl = '/local/f1-sensor-live-data-card/fonts/barlow-condensed-latin-700-normal.woff2';
-
-  // 1. Injected @font-face definition in head
-  const style = document.createElement('style');
-  style.id = 'f1-ticker-font-styles';
-  style.textContent = `
+  const fallbackStyle = document.createElement('style');
+  fallbackStyle.setAttribute('data-f1-fonts', 'true');
+  fallbackStyle.textContent = `
     @font-face {
       font-family: 'F1 Barlow Condensed';
       src: url('${fontUrl}') format('woff2');
@@ -25,22 +51,8 @@ function ensureF1Typography() {
       font-display: swap;
     }
   `;
-  document.head.appendChild(style);
+  document.head.appendChild(fallbackStyle);
 
-  // 2. Register font via FontFace API
-  if (window.FontFace && document.fonts) {
-    try {
-      const face = new FontFace('F1 Barlow Condensed', `url('${fontUrl}')`, {
-        weight: '100 900',
-        style: 'normal',
-        display: 'swap',
-      });
-      document.fonts.add(face);
-      face.load().catch(() => {});
-    } catch (e) {}
-  }
-
-  // 3. Fallback to Google Fonts Barlow Condensed
   if (!document.querySelector('link[href*="Barlow+Condensed"]')) {
     const link = document.createElement('link');
     link.rel = 'stylesheet';
@@ -49,14 +61,19 @@ function ensureF1Typography() {
   }
 }
 
-// Initialize typography immediately
-ensureF1Typography();
-
+// Kick off font loading
+ensureF1Fonts();
 class F1TickerCard extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: 'open' });
+    this._scrollPos = 0;
+    this._groupWidth = 0;
+    this._lastTime = null;
+    this._animFrame = null;
+    this._isPaused = false;
     this._lastSignature = null;
+    this._tick = this._tick.bind(this);
   }
 
   static getConfigElement() {
@@ -107,7 +124,7 @@ class F1TickerCard extends HTMLElement {
       session_status_entity: 'sensor.f1_session_status',
     }, config || {});
 
-    ensureF1Typography();
+    ensureF1Fonts();
     this._renderBase();
   }
 
@@ -116,28 +133,34 @@ class F1TickerCard extends HTMLElement {
     this._updateContent();
   }
 
+  connectedCallback() {
+    ensureF1Fonts();
+    if (!this._animFrame) {
+      this._lastTime = performance.now();
+      this._animFrame = requestAnimationFrame(this._tick);
+    }
+  }
+
+  disconnectedCallback() {
+    if (this._animFrame) {
+      cancelAnimationFrame(this._animFrame);
+      this._animFrame = null;
+    }
+  }
+
   _renderBase() {
-    const fontUrl = '/local/f1-sensor-live-data-card/fonts/barlow-condensed-latin-700-normal.woff2';
     const style = `
-      @font-face {
-        font-family: 'F1 Barlow Condensed';
-        src: url('${fontUrl}') format('woff2');
-        font-weight: 100 900;
-        font-style: normal;
-        font-display: swap;
-      }
       :host {
         display: block;
         width: 100%;
         color: var(--f1-text, var(--primary-text-color, #e9edf3));
-        font-family: 'F1 Barlow Condensed', 'Formula1', 'Formula 1', 'Barlow Condensed', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+        font-family: 'Formula1 Display', 'Formula1 Wide', 'F1 Barlow Condensed', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
         font-size: 1rem;
         line-height: 1.5;
         box-sizing: border-box;
       }
       * {
         box-sizing: border-box;
-        font-family: inherit;
       }
       ha-card {
         background: var(--f1-surface, var(--ha-card-background, var(--card-background-color, #15151e)));
@@ -167,22 +190,25 @@ class F1TickerCard extends HTMLElement {
       .fia-badge {
         background: var(--f1-accent, #e10600);
         color: #fff;
-        font-size: 0.72rem;
-        font-weight: 800;
+        font-family: 'Formula1 Wide', 'Formula1 Display', 'F1 Barlow Condensed', sans-serif !important;
+        font-size: 0.68rem;
+        font-weight: 700;
         letter-spacing: 0.08em;
         padding: 2px 7px;
         border-radius: 4px;
         text-transform: uppercase;
       }
       .title-text {
-        font-size: 1.15rem;
+        font-family: 'Formula1 Wide', 'Formula1 Display', 'F1 Barlow Condensed', sans-serif !important;
+        font-size: 0.96rem;
         font-weight: 700;
-        letter-spacing: 0.03em;
+        letter-spacing: 0.04em;
         color: var(--f1-text, var(--primary-text-color, #e9edf3));
         text-transform: uppercase;
       }
       .subtitle-text {
-        font-size: 0.8rem;
+        font-family: 'Formula1 Display', 'Formula1 Wide', 'F1 Barlow Condensed', sans-serif !important;
+        font-size: 0.76rem;
         font-weight: 600;
         letter-spacing: 0.04em;
         color: var(--f1-muted, var(--secondary-text-color, #b9c1ce));
@@ -194,9 +220,10 @@ class F1TickerCard extends HTMLElement {
         display: inline-flex;
         align-items: center;
         gap: 6px;
-        font-size: 0.78rem;
+        font-family: 'Formula1 Wide', 'Formula1 Display', 'F1 Barlow Condensed', sans-serif !important;
+        font-size: 0.72rem;
         font-weight: 700;
-        letter-spacing: 0.06em;
+        letter-spacing: 0.05em;
         text-transform: uppercase;
         padding: 2px 8px;
         border: 1px solid currentColor;
@@ -236,28 +263,23 @@ class F1TickerCard extends HTMLElement {
         50% { opacity: 0.35; transform: scale(0.8); }
       }
 
-      /* Marquee Viewport & Hardware-Accelerated Track */
+      /* Continuous JS requestAnimationFrame Marquee Viewport */
       .ticker-container {
         position: relative;
         overflow: hidden;
-        height: 38px;
+        height: 40px;
         display: flex;
         align-items: center;
         background: var(--f1-panel, rgba(127, 127, 127, 0.04));
         width: 100%;
+        cursor: default;
+        user-select: none;
       }
       .ticker-track {
         display: flex;
         white-space: nowrap;
         will-change: transform;
-        animation: tickerScroll var(--ticker-duration, 40s) linear infinite;
-      }
-      .ticker-container:hover .ticker-track {
-        animation-play-state: paused;
-      }
-      @keyframes tickerScroll {
-        0% { transform: translate3d(0, 0, 0); }
-        100% { transform: translate3d(-50%, 0, 0); }
+        transform: translate3d(0, 0, 0);
       }
       .ticker-group {
         display: inline-flex;
@@ -268,15 +290,17 @@ class F1TickerCard extends HTMLElement {
         display: inline-flex;
         align-items: center;
         gap: 8px;
-        font-size: 0.95rem;
-        font-weight: 600;
+        font-family: 'Formula1 Display', 'Formula1 Wide', 'F1 Barlow Condensed', sans-serif !important;
+        font-size: 0.92rem;
+        font-weight: 500;
         letter-spacing: 0.03em;
         color: var(--f1-text, var(--primary-text-color, #e9edf3));
       }
 
       /* F1 Weekend Hub standard chip tags */
       .tag {
-        font-size: 0.75rem;
+        font-family: 'Formula1 Wide', 'Formula1 Display', 'F1 Barlow Condensed', sans-serif !important;
+        font-size: 0.68rem;
         font-weight: 700;
         letter-spacing: 0.05em;
         text-transform: uppercase;
@@ -332,8 +356,8 @@ class F1TickerCard extends HTMLElement {
 
       .separator {
         color: var(--f1-divider, rgba(127, 127, 127, 0.35));
-        font-size: 0.72rem;
-        margin: 0 14px;
+        font-size: 0.65rem;
+        margin: 0 16px;
         user-select: none;
       }
     `;
@@ -352,14 +376,55 @@ class F1TickerCard extends HTMLElement {
           </div>
         </div>
         <div class="ticker-container" id="ticker-box">
-          <div class="ticker-track" id="ticker-track" style="--ticker-duration: ${this._config.speed || 35}s;">
+          <div class="ticker-track" id="ticker-track">
             <div class="ticker-group" id="content-1"></div>
             <div class="ticker-group" id="content-2"></div>
           </div>
         </div>
       </ha-card>
     `;
+
+    const box = this.shadowRoot.getElementById('ticker-box');
+    if (box) {
+      box.addEventListener('mouseenter', () => { this._isPaused = true; });
+      box.addEventListener('mouseleave', () => {
+        this._isPaused = false;
+        this._lastTime = performance.now();
+      });
+      box.addEventListener('touchstart', () => { this._isPaused = true; }, { passive: true });
+      box.addEventListener('touchend', () => {
+        this._isPaused = false;
+        this._lastTime = performance.now();
+      }, { passive: true });
+    }
+
     this._lastSignature = null;
+    this._trackElem = this.shadowRoot.getElementById('ticker-track');
+
+    if (!this._animFrame) {
+      this._lastTime = performance.now();
+      this._animFrame = requestAnimationFrame(this._tick);
+    }
+  }
+
+  _tick(now) {
+    if (!this._lastTime) this._lastTime = now;
+    const dt = Math.min(0.1, (now - this._lastTime) / 1000);
+    this._lastTime = now;
+
+    if (!document.hidden && !this._isPaused && this._groupWidth > 0 && this._trackElem) {
+      const speed = parseInt(this._config?.speed, 10) || 35;
+      this._scrollPos -= speed * dt;
+
+      // When one complete group scrolls off the screen, wrap around seamlessly
+      if (this._scrollPos <= -this._groupWidth) {
+        this._scrollPos += this._groupWidth;
+      }
+
+      this._trackElem.style.transform = `translate3d(${this._scrollPos.toFixed(2)}px, 0, 0)`;
+    }
+
+    this._animFrame = requestAnimationFrame(this._tick);
   }
 
   _updateContent() {
@@ -557,25 +622,23 @@ class F1TickerCard extends HTMLElement {
       }
     }
 
-    // Generate Signature to avoid resetting continuous animation on untouched ticks
-    const signature = JSON.stringify({
-      badgeHtml,
-      badgeClass,
-      items,
-      speed: this._config.speed || 35,
-    });
-
-    if (this._lastSignature === signature) {
-      return; // Data has not changed: preserve ongoing marquee animation without resetting
-    }
-    this._lastSignature = signature;
-
     // Update Status Badge
     const statusPill = this.shadowRoot.getElementById('status-pill');
     if (statusPill) {
       statusPill.className = `status-pill ${badgeClass}`;
       statusPill.innerHTML = badgeHtml;
     }
+
+    // Generate Signature to avoid rebuilding DOM when identical
+    const signature = JSON.stringify({
+      items,
+      speed: this._config.speed || 35,
+    });
+
+    if (this._lastSignature === signature && this._groupWidth > 0) {
+      return; // Data has not changed: maintain current marquee scroll position
+    }
+    this._lastSignature = signature;
 
     // Build base HTML sequence for items
     const baseHtml = items.map(item => `
@@ -586,24 +649,21 @@ class F1TickerCard extends HTMLElement {
       <span class="separator">◆</span>
     `).join('');
 
-    // Ensure each content group repeats enough times to exceed any widescreen viewport (min 2500px)
+    // Ensure content group repeats enough times to exceed widescreen viewport (min 2500px)
     const repeatCount = Math.max(3, Math.ceil(2400 / Math.max(300, items.length * 160)));
     const repeatedHtml = baseHtml.repeat(repeatCount);
 
     const c1 = this.shadowRoot.getElementById('content-1');
     const c2 = this.shadowRoot.getElementById('content-2');
-    const trackElem = this.shadowRoot.getElementById('ticker-track');
 
-    if (c1 && c2 && trackElem) {
+    if (c1 && c2) {
       c1.innerHTML = repeatedHtml;
       c2.innerHTML = repeatedHtml;
 
-      // Adjust animation duration proportionally to group width for uniform speed
+      // Measure group width without resetting scroll position!
       requestAnimationFrame(() => {
-        const width = c1.offsetWidth || 1800;
-        const speed = parseInt(this._config.speed, 10) || 35;
-        const duration = Math.max(15, Math.round(width / speed));
-        trackElem.style.setProperty('--ticker-duration', `${duration}s`);
+        const measuredWidth = c1.offsetWidth || 1800;
+        this._groupWidth = measuredWidth;
       });
     }
   }
@@ -925,7 +985,7 @@ if (!customElements.get('f1-ticker-card')) {
   window.customCards.push({
     type: 'f1-ticker-card',
     name: 'F1 Race Control Ticker Card',
-    description: 'Hardware-accelerated continuous marquee banner for live F1 race control, steward notices, fastest laps, DRS battles and dynamic track status matching F1 Weekend Hub standards',
+    description: 'Ultra-smooth 60fps continuous ticker for live F1 race control, steward notices, fastest laps, DRS battles and track status with official Formula 1 typography',
     preview: true,
   });
 }
