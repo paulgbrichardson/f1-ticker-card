@@ -1,6 +1,6 @@
 {
   "name": "f1-ticker-card",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "Smooth hardware-accelerated marquee ticker for Formula 1 race control, steward investigations, track limits, fastest laps, DRS battles, pit stops, track status, weather, and FIA bulletins in Home Assistant Lovelace dashboards.",
   "main": "f1-ticker-card.js",
   "scripts": {

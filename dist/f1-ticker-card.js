@@ -1,12 +1,12 @@
 /**
  * F1 Live Race Control Ticker Card (f1-ticker-card)
- * Version: 1.6.0
+ * Version: 1.7.0
  * 
  * Hardware-accelerated continuous 60fps single-message conveyor ticker.
  * Natively matches Nicxe/f1_sensor design system with authentic Formula 1 typography,
  * fully-rounded capsule status pills, theme-matched color variables, and graceful incoming message loading.
  * 
- * Features intelligent Replay Time-Travel & Seek Synchronization:
+ * Features Single-Pass Retirement, Adaptive Speed Governor, and Replay Time-Travel:
  * Automatically detects playback position jumps, backwards rewinds (-30s), forward fast-forward,
  * and session swaps — instantly emptying stale future telemetry and loading fresh snapshot data
  * from the exact new timestamp.
@@ -77,6 +77,8 @@ class F1TickerCard extends HTMLElement {
     this._animFrame = null;
     this._isPaused = false;
     this._activeItems = new Map();
+    this._retiredSignatures = new Set();
+    this._currentSpeed = null;
     this._lastPlaybackPos = null;
     this._lastSessionId = null;
     this._wasReplayMode = null;
@@ -308,6 +310,11 @@ class F1TickerCard extends HTMLElement {
         flex-shrink: 0;
         height: 1px;
       }
+      .ticker-idle {
+        opacity: 0.75;
+        letter-spacing: 0.05em;
+        user-select: none;
+      }
       .ticker-item {
         display: inline-flex;
         align-items: center;
@@ -435,46 +442,74 @@ class F1TickerCard extends HTMLElement {
     const dt = Math.min(0.1, (now - this._lastTime) / 1000);
     this._lastTime = now;
 
-    if (!document.hidden && !this._isPaused && this._trackElem && this._trackElem.children.length > 0) {
-      const speed = parseInt(this._config?.speed, 10) || 35;
-      this._scrollPos += speed * dt;
+    if (!document.hidden && !this._isPaused && this._trackElem) {
+      const realUnits = Array.from(this._trackElem.querySelectorAll('.ticker-unit:not([data-id="spacer"]):not([data-id="idle"])'));
+      const activeCount = realUnits.length;
 
-      // Handle items as they exit the left edge of the screen
-      while (this._trackElem.firstElementChild) {
-        const firstChild = this._trackElem.firstElementChild;
-        const itemWidth = firstChild.getBoundingClientRect().width;
-        if (this._scrollPos >= itemWidth && itemWidth > 0) {
-          this._scrollPos -= itemWidth;
-          this._trackElem.removeChild(firstChild);
+      if (activeCount > 0) {
+        const baseSpeed = parseInt(this._config?.speed, 10) || 40;
+        // Adaptive Speed Governor: accelerate up to 75 px/s if queue surges
+        let targetSpeed = baseSpeed;
+        if (activeCount >= 3) {
+          targetSpeed = Math.min(75, baseSpeed + (activeCount - 2) * 12);
+        }
 
-          const id = firstChild.getAttribute('data-id');
-          if (id === 'spacer') {
-            // Spacer exited: re-append to the end if still needed
-            if (this._needsSpacer()) {
-              this._trackElem.appendChild(firstChild);
+        if (this._currentSpeed === null) this._currentSpeed = baseSpeed;
+        this._currentSpeed += (targetSpeed - this._currentSpeed) * Math.min(1, dt * 4);
+
+        this._scrollPos += this._currentSpeed * dt;
+
+        // Handle items as they exit the left edge of the screen
+        while (this._trackElem.firstElementChild) {
+          const firstChild = this._trackElem.firstElementChild;
+          const itemWidth = firstChild.getBoundingClientRect().width;
+          if (this._scrollPos >= itemWidth && itemWidth > 0) {
+            this._scrollPos -= itemWidth;
+            this._trackElem.removeChild(firstChild);
+
+            const id = firstChild.getAttribute('data-id');
+            const sig = firstChild.getAttribute('data-sig');
+
+            if (id === 'spacer' || id === 'idle') {
+              if (id === 'spacer' && this._needsSpacer()) {
+                this._trackElem.appendChild(firstChild);
+              }
+              continue;
             }
-            continue;
-          }
 
-          // If still in active items feed, recycle to the entrance (right side)
-          if (id && this._activeItems.has(id)) {
-            const latest = this._activeItems.get(id);
-            this._updateItemElement(firstChild, latest);
-
-            // Re-insert: if a spacer exists, insert before spacer so spacer stays at tail
-            const spacer = this._trackElem.querySelector('.ticker-spacer');
-            if (spacer) {
-              this._trackElem.insertBefore(firstChild, spacer);
-            } else {
-              this._trackElem.appendChild(firstChild);
+            // SINGLE-PASS RETIREMENT: Mark signature as retired
+            if (sig) {
+              this._retiredSignatures.add(sig);
+              if (this._retiredSignatures.size > 80) {
+                const oldest = this._retiredSignatures.values().next().value;
+                this._retiredSignatures.delete(oldest);
+              }
             }
+            // DO NOT RE-APPEND TO TRACK! The item has cleanly completed its single pass.
+          } else {
+            break;
           }
-        } else {
-          break;
+        }
+
+        this._trackElem.style.transform = `translate3d(-${this._scrollPos.toFixed(2)}px, 0, 0)`;
+      } else {
+        // Track is empty: show idle placeholder if no items remain
+        const idleEl = this._trackElem.querySelector('.ticker-idle');
+        if (!idleEl && this._trackElem.children.length === 0) {
+          const idleUnit = document.createElement('div');
+          idleUnit.className = 'ticker-unit ticker-idle';
+          idleUnit.setAttribute('data-id', 'idle');
+          idleUnit.innerHTML = `
+            <span class="ticker-item">
+              <span class="tag tag-clear">🟢 TRACK CLEAR</span>
+              <span class="ticker-text">MONITORING RACE CONTROL</span>
+            </span>
+          `;
+          this._trackElem.appendChild(idleUnit);
+          this._scrollPos = 0;
+          this._trackElem.style.transform = 'translate3d(0, 0, 0)';
         }
       }
-
-      this._trackElem.style.transform = `translate3d(-${this._scrollPos.toFixed(2)}px, 0, 0)`;
     }
 
     this._animFrame = requestAnimationFrame(this._tick);
@@ -528,6 +563,7 @@ class F1TickerCard extends HTMLElement {
     const unit = document.createElement('div');
     unit.className = 'ticker-unit';
     unit.setAttribute('data-id', item.id);
+    unit.setAttribute('data-sig', `${item.id}::${item.text}`);
     unit.innerHTML = `
       <span class="ticker-item">
         <span class="tag ${item.tag}">${item.label}</span>
@@ -543,6 +579,7 @@ class F1TickerCard extends HTMLElement {
     const textEl = unit.querySelector('.ticker-text');
     if (textEl && textEl.textContent !== item.text) {
       textEl.textContent = item.text;
+      unit.setAttribute('data-sig', `${item.id}::${item.text}`);
     }
     const tagEl = unit.querySelector('.tag');
     if (tagEl) {
@@ -558,34 +595,63 @@ class F1TickerCard extends HTMLElement {
   _syncTrack(items) {
     if (!this._trackElem) return;
 
-    this._activeItems = new Map(items.map(item => [item.id, item]));
+    // 1. Filter out items that have already completed their single pass with this exact signature
+    const unretiredItems = items.filter(item => {
+      const sig = `${item.id}::${item.text}`;
+      return !this._retiredSignatures.has(sig);
+    });
 
-    // 1. Initial boot or post-jump reset: populate track with fresh items once
-    if (this._trackElem.children.length === 0) {
-      if (items.length === 0) return;
-      items.forEach(item => {
+    this._activeItems = new Map(unretiredItems.map(item => [item.id, item]));
+
+    // 2. Remove idle placeholder if real unretired items arrive
+    const idleEl = this._trackElem.querySelector('.ticker-idle');
+    if (unretiredItems.length > 0 && idleEl) {
+      this._trackElem.removeChild(idleEl);
+      this._scrollPos = 0;
+    }
+
+    // 3. Initial boot, empty track, or post-jump reset
+    const currentUnits = this._trackElem.querySelectorAll('.ticker-unit:not([data-id="spacer"]):not([data-id="idle"])');
+    if (currentUnits.length === 0) {
+      if (unretiredItems.length === 0) {
+        if (!idleEl && this._trackElem.children.length === 0) {
+          const idleUnit = document.createElement('div');
+          idleUnit.className = 'ticker-unit ticker-idle';
+          idleUnit.setAttribute('data-id', 'idle');
+          idleUnit.innerHTML = `
+            <span class="ticker-item">
+              <span class="tag tag-clear">🟢 TRACK CLEAR</span>
+              <span class="ticker-text">MONITORING RACE CONTROL</span>
+            </span>
+          `;
+          this._trackElem.appendChild(idleUnit);
+          this._scrollPos = 0;
+          this._trackElem.style.transform = 'translate3d(0, 0, 0)';
+        }
+        return;
+      }
+      unretiredItems.forEach(item => {
         this._trackElem.appendChild(this._createItemElement(item));
       });
       requestAnimationFrame(() => this._updateSpacer());
       return;
     }
 
-    // 2. Track is already moving: update existing units in-place without moving positions
+    // 4. Track is moving: update existing units in-place if their signature evolved
     const existingIds = new Set();
-    const children = Array.from(this._trackElem.querySelectorAll('.ticker-unit'));
-    children.forEach(child => {
+    currentUnits.forEach(child => {
       const id = child.getAttribute('data-id');
       if (id && this._activeItems.has(id)) {
         existingIds.add(id);
-        this._updateItemElement(child, this._activeItems.get(id));
+        const latest = this._activeItems.get(id);
+        this._updateItemElement(child, latest);
       }
     });
 
-    // 3. Add brand new items to the entrance of the ticker (right edge)
-    // They will slide gracefully into view as the train moves forward
+    // 5. Add brand new unretired items to the entrance of the ticker (right edge)
     const spacer = this._trackElem.querySelector('.ticker-spacer');
     let addedNew = false;
-    items.forEach(item => {
+    unretiredItems.forEach(item => {
       if (!existingIds.has(item.id)) {
         const newUnit = this._createItemElement(item);
         if (spacer) {
@@ -683,11 +749,13 @@ class F1TickerCard extends HTMLElement {
     }
     this._wasReplayMode = isReplayMode;
 
-    // If jump or seek detected, EMPTY the ticker completely!
+    // If jump or seek detected, EMPTY the ticker completely and clear retired memory!
     if (seekDetected && this._trackElem) {
       this._trackElem.innerHTML = '';
       this._scrollPos = 0;
       this._activeItems.clear();
+      this._retiredSignatures.clear();
+      this._currentSpeed = null;
       this._lastTime = performance.now();
     }
 
@@ -730,20 +798,31 @@ class F1TickerCard extends HTMLElement {
 
     const items = [];
 
-    // 4. Race Control Messages (Text details only, unique per message)
+    // 4. Race Control Messages (Text details only, compact trimmed & capped to latest 2)
     if (this._config.show_race_control !== false && isAvailable(rc)) {
+      const cleanRcText = (raw) => {
+        return (raw || '').trim()
+          .replace(/INCIDENT INVOLVING CAR /gi, 'CAR ')
+          .replace(/INCIDENT UNDER INVESTIGATION/gi, 'INVESTIGATION')
+          .replace(/INCIDENT NOTED/gi, 'NOTED')
+          .replace(/NO FURTHER ACTION REQUIRED/gi, 'NO FURTHER ACTION')
+          .replace(/TURN (\d+)/gi, 'T$1')
+          .replace(/\s+/g, ' ')
+          .trim();
+      };
+
       if (rc.attributes && Array.isArray(rc.attributes.history) && rc.attributes.history.length > 0) {
-        // Take up to 3 most recent unique messages
-        const recentMsgs = rc.attributes.history.slice(0, 3);
+        // Capped to latest 2 newest notices to prevent clutter
+        const recentMsgs = rc.attributes.history.slice(0, 2);
         recentMsgs.forEach(m => {
-          const text = (m.message || '').trim();
+          const text = cleanRcText(m.message);
           if (!isPureNumber(text) && text.length > 1 && text.toUpperCase() !== 'OFFLINE' && text.toUpperCase() !== 'NONE') {
             const key = m.event_id || text;
             items.push({ id: `rc-${key}`, tag: 'tag-rc', label: '🚨 RACE CONTROL', text });
           }
         });
       } else {
-        const text = rc.state.trim();
+        const text = cleanRcText(rc.state);
         if (!isPureNumber(text) && text.length > 1 && text.toUpperCase() !== 'OFFLINE' && text.toUpperCase() !== 'NONE') {
           items.push({ id: `rc-${text}`, tag: 'tag-rc', label: '🚨 RACE CONTROL', text });
         }
@@ -780,16 +859,19 @@ class F1TickerCard extends HTMLElement {
       }
     }
 
-    // 7. On-Track Battles (Intervals <= 1.2s DRS range, stabilized to 1 decimal place)
-    if (this._config.show_battles !== false && drivers.length > 1) {
+    // 7. On-Track Battles (Suppressed under yellow/SC/VSC, capped to Top 1 closest duel <= 1.0s)
+    const rawTrackUpper = (track && track.state) ? track.state.trim().toUpperCase() : 'CLEAR';
+    const isFlagActive = ['YELLOW', 'SC', 'VSC', 'RED'].includes(rawTrackUpper);
+
+    if (this._config.show_battles !== false && drivers.length > 1 && !isFlagActive) {
       let battleCount = 0;
-      for (let i = 1; i < drivers.length && battleCount < 3; i++) {
+      for (let i = 1; i < drivers.length && battleCount < 1; i++) { // Cap to single closest duel!
         const ahead = drivers[i - 1];
         const curr = drivers[i];
         const interval = curr.interval_to_position_ahead || '';
         if (interval.startsWith('+')) {
           const val = parseFloat(interval.replace('+', '').replace('s', ''));
-          if (!isNaN(val) && val <= 1.2 && val > 0) {
+          if (!isNaN(val) && val <= 1.0 && val > 0) {
             const formattedInterval = `+${val.toFixed(1)}s`;
             items.push({
               id: `battle-${ahead.tla}-${curr.tla}`,
@@ -811,7 +893,7 @@ class F1TickerCard extends HTMLElement {
           id: 'pit-stops',
           tag: 'tag-pit',
           label: '🛞 IN PIT',
-          text: `${inPitDrivers.join(', ')} in pit lane`,
+          text: `${inPitDrivers.join(', ')} IN PIT`,
         });
       }
     }
