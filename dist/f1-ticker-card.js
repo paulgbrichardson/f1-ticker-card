@@ -1,6 +1,6 @@
 /**
  * F1 Live Race Control Ticker Card (f1-ticker-card)
- * Version: 2.1.0
+ * Version: 2.1.1
  * 
  * Hardware-accelerated continuous 60fps single-message conveyor ticker.
  * Fully unified with the Nicxe/f1_sensor Weekend Hub design language:
@@ -1265,7 +1265,58 @@ class F1TickerCard extends HTMLElement {
 class F1TickerCardEditor extends HTMLElement {
   setConfig(config) {
     this._config = Object.assign({}, config);
-    this._renderBase();
+    if (!this._rendered) {
+      this._renderBase();
+      this._rendered = true;
+    } else {
+      this._updateContent();
+    }
+  }
+
+  _isFocused(element) {
+    if (!element) return false;
+    try {
+      if (element.matches && element.matches(':focus')) return true;
+      if (document.activeElement === element) return true;
+      const root = element.getRootNode();
+      if (root && root.activeElement === element) return true;
+    } catch (e) {}
+    return false;
+  }
+
+  _updateContent() {
+    if (!this._config) return;
+    const textFields = ['kicker', 'title', 'subtitle', 'speed'];
+    textFields.forEach(id => {
+      const el = this.querySelector(`#${id}`);
+      if (el && !this._isFocused(el)) {
+        const val = this._config[id] ?? '';
+        if (el.value !== String(val)) {
+          el.value = val;
+        }
+      }
+    });
+
+    const boolFields = [
+      'show_race_control',
+      'show_track_status',
+      'show_fastest_lap',
+      'show_battles',
+      'show_pit_stops',
+      'show_weather',
+      'show_lap_count',
+      'show_fia_documents',
+      'show_next_race'
+    ];
+    boolFields.forEach(id => {
+      const el = this.querySelector(`#${id}`);
+      if (el) {
+        const checked = this._config[id] === true || (this._config[id] !== false && !['show_weather', 'show_lap_count', 'show_fia_documents', 'show_next_race'].includes(id));
+        if (el.checked !== checked) {
+          el.checked = checked;
+        }
+      }
+    });
   }
 
   _renderBase() {
@@ -1496,19 +1547,19 @@ class F1TickerCardEditor extends HTMLElement {
   _valueChanged() {
     if (!this._config) return;
     const newConfig = Object.assign({}, this._config, {
-      kicker: this.querySelector('#kicker').value,
-      title: this.querySelector('#title').value,
-      subtitle: this.querySelector('#subtitle').value,
-      speed: parseInt(this.querySelector('#speed').value, 10) || 35,
-      show_race_control: this.querySelector('#show_race_control').checked,
-      show_track_status: this.querySelector('#show_track_status').checked,
-      show_fastest_lap: this.querySelector('#show_fastest_lap').checked,
-      show_battles: this.querySelector('#show_battles').checked,
-      show_pit_stops: this.querySelector('#show_pit_stops').checked,
-      show_weather: this.querySelector('#show_weather').checked,
-      show_lap_count: this.querySelector('#show_lap_count').checked,
-      show_fia_documents: this.querySelector('#show_fia_documents').checked,
-      show_next_race: this.querySelector('#show_next_race').checked,
+      kicker: this.querySelector('#kicker')?.value ?? '',
+      title: this.querySelector('#title')?.value ?? '',
+      subtitle: this.querySelector('#subtitle')?.value ?? '',
+      speed: parseInt(this.querySelector('#speed')?.value, 10) || 35,
+      show_race_control: this.querySelector('#show_race_control')?.checked ?? true,
+      show_track_status: this.querySelector('#show_track_status')?.checked ?? true,
+      show_fastest_lap: this.querySelector('#show_fastest_lap')?.checked ?? true,
+      show_battles: this.querySelector('#show_battles')?.checked ?? true,
+      show_pit_stops: this.querySelector('#show_pit_stops')?.checked ?? true,
+      show_weather: this.querySelector('#show_weather')?.checked ?? false,
+      show_lap_count: this.querySelector('#show_lap_count')?.checked ?? false,
+      show_fia_documents: this.querySelector('#show_fia_documents')?.checked ?? false,
+      show_next_race: this.querySelector('#show_next_race')?.checked ?? false,
       show_investigations: false,
       show_track_limits: false,
     });
@@ -1536,7 +1587,7 @@ if (!customElements.get('f1-ticker-card')) {
     preview: true,
   });
   console.info(
-    '%c F1-TICKER-CARD %c v2.1.0 ',
+    '%c F1-TICKER-CARD %c v2.1.1 ',
     'color: white; background: #e10600; font-weight: 700;',
     'color: #040711; background: #38bdf8; font-weight: 700;'
   );
