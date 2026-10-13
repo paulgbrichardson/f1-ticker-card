@@ -139,6 +139,10 @@ views:
 | `fia_documents_entity` | string | `sensor.f1_fia_documents` | Entity ID for FIA decision documents |
 | `next_race_entity` | string | `sensor.f1_next_race` | Entity ID for upcoming race info |
 
+## 🏎️ Complete Pit Wall Dashboard
+
+For the complete production layout, full YAML configuration, and matching modular styles for `custom:f1-sensor-card`, visit the **[f1-pitwall-dashboard](https://github.com/paulgbrichardson/f1-pitwall-dashboard)** showcase repository.
+
 ---
 
 ## 📄 License
