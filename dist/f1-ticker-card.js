@@ -98,6 +98,7 @@ class F1TickerCard extends HTMLElement {
       speed: 35,
       show_spoiler_toggle: true,
       spoiler_entity: 'switch.f1_no_spoiler_mode',
+      spoiler_label: 'SPOILER MODE',
       show_race_control: true,
       show_track_status: true,
       show_fastest_lap: true,
@@ -118,6 +119,7 @@ class F1TickerCard extends HTMLElement {
       speed: 35,
       show_spoiler_toggle: true,
       spoiler_entity: 'switch.f1_no_spoiler_mode',
+      spoiler_label: 'SPOILER MODE',
       show_race_control: true,
       show_track_status: true,
       show_fastest_lap: true,
@@ -624,9 +626,9 @@ class F1TickerCard extends HTMLElement {
               <div class="wh-subtitle" id="subtitle-text">${this._config.subtitle !== undefined && this._config.subtitle !== null ? this._config.subtitle : 'INCIDENTS & TRACK LIMITS'}</div>
             </div>
             <div class="wh-header-actions">
-              <button class="wh-spoiler-btn" id="spoiler-toggle" type="button" title="Toggle Spoiler Protection">
+              <button class="wh-spoiler-btn" id="spoiler-toggle" type="button" title="Toggle Spoiler Mode">
                 <ha-icon class="wh-spoiler-icon" id="spoiler-icon" icon="mdi:eye-outline"></ha-icon>
-                <span id="spoiler-label">NO SPOILER: OFF</span>
+                <span id="spoiler-label">${(this._config.spoiler_label || 'SPOILER MODE').toUpperCase()}: OFF</span>
               </button>
               <div class="wh-live-badge before" id="status-pill">
                 <span class="wh-live-dot"></span>
@@ -1221,6 +1223,7 @@ class F1TickerCard extends HTMLElement {
     const spoilerBtn = this.shadowRoot.getElementById('spoiler-toggle');
     const spoilerIcon = this.shadowRoot.getElementById('spoiler-icon');
     const spoilerLabel = this.shadowRoot.getElementById('spoiler-label');
+    const spoilerTitle = (this._config.spoiler_label || 'SPOILER MODE').trim().toUpperCase();
 
     if (spoilerBtn) {
       if (this._config.show_spoiler_toggle === false) {
@@ -1228,14 +1231,15 @@ class F1TickerCard extends HTMLElement {
       } else {
         spoilerBtn.style.display = 'inline-flex';
         const isSpoilerOn = spoilerState ? spoilerState.state === 'on' : false;
+        const targetLabel = `${spoilerTitle}: ${isSpoilerOn ? 'ON' : 'OFF'}`;
         if (isSpoilerOn) {
           if (!spoilerBtn.classList.contains('active')) spoilerBtn.classList.add('active');
           if (spoilerIcon && spoilerIcon.getAttribute('icon') !== 'mdi:eye-off') spoilerIcon.setAttribute('icon', 'mdi:eye-off');
-          if (spoilerLabel && spoilerLabel.textContent !== 'NO SPOILER: ON') spoilerLabel.textContent = 'NO SPOILER: ON';
+          if (spoilerLabel && spoilerLabel.textContent !== targetLabel) spoilerLabel.textContent = targetLabel;
         } else {
           if (spoilerBtn.classList.contains('active')) spoilerBtn.classList.remove('active');
           if (spoilerIcon && spoilerIcon.getAttribute('icon') !== 'mdi:eye-outline') spoilerIcon.setAttribute('icon', 'mdi:eye-outline');
-          if (spoilerLabel && spoilerLabel.textContent !== 'NO SPOILER: OFF') spoilerLabel.textContent = 'NO SPOILER: OFF';
+          if (spoilerLabel && spoilerLabel.textContent !== targetLabel) spoilerLabel.textContent = targetLabel;
         }
       }
     }
@@ -1410,7 +1414,7 @@ class F1TickerCardEditor extends HTMLElement {
 
   _updateContent() {
     if (!this._config) return;
-    const textFields = ['kicker', 'title', 'subtitle', 'speed', 'spoiler_entity'];
+    const textFields = ['kicker', 'title', 'subtitle', 'speed', 'spoiler_entity', 'spoiler_label'];
     textFields.forEach(id => {
       const el = this.querySelector(`#${id}`);
       if (el && !this._isFocused(el)) {
@@ -1574,6 +1578,11 @@ class F1TickerCardEditor extends HTMLElement {
           <input type="text" class="input-text" id="spoiler_entity" value="${this._config.spoiler_entity || 'switch.f1_no_spoiler_mode'}" placeholder="switch.f1_no_spoiler_mode">
         </div>
 
+        <div class="input-group">
+          <label class="label-title">Spoiler Button Label</label>
+          <input type="text" class="input-text" id="spoiler_label" value="${this._config.spoiler_label || 'SPOILER MODE'}" placeholder="SPOILER MODE">
+        </div>
+
         <div class="section-header">Live Action & Safety Feeds</div>
 
         <div class="config-row">
@@ -1696,6 +1705,7 @@ class F1TickerCardEditor extends HTMLElement {
       speed: parseInt(this.querySelector('#speed')?.value, 10) || 35,
       show_spoiler_toggle: this.querySelector('#show_spoiler_toggle')?.checked ?? true,
       spoiler_entity: this.querySelector('#spoiler_entity')?.value ?? 'switch.f1_no_spoiler_mode',
+      spoiler_label: this.querySelector('#spoiler_label')?.value ?? 'SPOILER MODE',
       show_race_control: this.querySelector('#show_race_control')?.checked ?? true,
       show_track_status: this.querySelector('#show_track_status')?.checked ?? true,
       show_fastest_lap: this.querySelector('#show_fastest_lap')?.checked ?? true,
