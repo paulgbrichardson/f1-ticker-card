@@ -1,13 +1,14 @@
 /**
  * F1 Live Race Control Ticker Card (f1-ticker-card)
- * Version: 2.0.0
+ * Version: 2.1.0
  * 
  * Hardware-accelerated continuous 60fps single-message conveyor ticker.
  * Fully unified with the Nicxe/f1_sensor Weekend Hub design language:
  * - Shared .wh-shell triple-gradient carbon chassis & 4px red left indicator stripe
  * - Authentic Formula 1 Display typography with responsive clamp scaling
  * - Mobile container queries (@container max-width: 680px) for seamless pitwall & phone viewports
- * - Standardized status pill badge (.wh-live-badge) with animated pulse dot
+ * - Standardized status pill badge (.wh-live-badge) with exact Weekend Hub success tokens & solid glowing dot
+ * - Dynamic Idle Track Status Engine: idle overlay always mirrors actual track status (VSC, SC, Yellow, Red, Clear)
  * - Preserves high-performance Single-Pass Retirement, Adaptive Speed Governor, and Replay Time-Travel.
  */
 
@@ -319,34 +320,19 @@ class F1TickerCard extends HTMLElement {
         white-space: nowrap;
       }
 
-      .wh-live-badge.live {
-        border-color: var(--f1-status-danger-border);
-        background: var(--f1-status-danger-bg);
-        color: var(--f1-status-danger);
-      }
-
+      .wh-live-badge.live,
       .wh-live-badge.replay-running {
         border-color: var(--f1-status-success-border);
         background: var(--f1-status-success-bg);
-        color: var(--f1-status-success);
+        color: var(--f1-status-success-text);
       }
 
-      .wh-live-badge.replay-paused {
-        border-color: var(--f1-status-warning-border);
-        background: var(--f1-status-warning-bg);
-        color: var(--f1-status-warning);
-      }
-
-      .wh-live-badge.replay-seeking {
-        border-color: var(--f1-status-orange-border);
-        background: var(--f1-status-orange-bg);
-        color: var(--f1-status-orange);
-      }
-
+      .wh-live-badge.replay-paused,
+      .wh-live-badge.replay-seeking,
       .wh-live-badge.before {
-        border-color: var(--f1-status-info-border);
-        background: var(--f1-status-info-bg);
-        color: var(--f1-status-info);
+        border-color: var(--f1-card-divider-strong);
+        background: var(--f1-card-chip);
+        color: var(--f1-card-muted);
       }
 
       .wh-live-dot {
@@ -355,17 +341,6 @@ class F1TickerCard extends HTMLElement {
         border-radius: 50%;
         background: currentColor;
         box-shadow: 0 0 10px currentColor;
-      }
-
-      .wh-live-badge.live .wh-live-dot,
-      .wh-live-badge.replay-running .wh-live-dot,
-      .wh-live-badge.replay-seeking .wh-live-dot {
-        animation: wh-pulse 1.5s infinite ease-in-out;
-      }
-
-      @keyframes wh-pulse {
-        0%, 100% { opacity: 1; transform: scale(1); }
-        50% { opacity: 0.35; transform: scale(0.85); }
       }
 
       /* Responsive Container Queries matching Weekend Hub */
@@ -416,14 +391,18 @@ class F1TickerCard extends HTMLElement {
         justify-content: center;
         gap: 12px;
         pointer-events: none;
-        opacity: 0.8;
+        opacity: 0.95;
         transition: opacity 0.25s ease;
         z-index: 1;
-        font-family: var(--f1-card-display-font-family, 'Formula1 Display', sans-serif) !important;
-        font-size: 0.72rem;
-        letter-spacing: 0.08em;
-        color: var(--f1-card-muted);
         user-select: none;
+      }
+
+      .ticker-idle-overlay .ticker-text {
+        font-family: var(--f1-card-body-font-family, 'Formula1 Display', sans-serif) !important;
+        font-size: 0.86rem;
+        font-weight: 600;
+        letter-spacing: 0.03em;
+        color: var(--f1-card-text);
       }
 
       .ticker-idle-overlay.hidden {
@@ -569,8 +548,8 @@ class F1TickerCard extends HTMLElement {
           </header>
           <div class="ticker-container" id="ticker-box">
             <div class="ticker-idle-overlay" id="ticker-idle">
-              <span class="tag tag-track-clear">🟢 TRACK CLEAR</span>
-              <span class="ticker-text">MONITORING RACE CONTROL</span>
+              <span class="tag tag-track-clear" id="idle-tag">🟢 TRACK CLEAR</span>
+              <span class="ticker-text" id="idle-text">MONITORING RACE CONTROL</span>
             </div>
             <div class="ticker-track" id="ticker-track"></div>
           </div>
@@ -878,9 +857,9 @@ class F1TickerCard extends HTMLElement {
       this._lastTime = performance.now();
     }
 
-    // 3. Status Pill Label & Theme Tone
-    let badgeClass = 'before';
-    let badgeText = 'BEFORE';
+    // 3. Status Pill Label & Theme Tone matching Weekend Hub Card
+    let badgeClass = '';
+    let badgeText = 'READY';
 
     if (isReplayMode) {
       const isPaused = (
@@ -890,12 +869,12 @@ class F1TickerCard extends HTMLElement {
 
       if (isSeeking) {
         badgeClass = 'replay-seeking';
-        badgeText = 'SEEKING';
+        badgeText = 'REPLAY SEEKING';
       } else if (isPaused) {
         badgeClass = 'replay-paused';
         badgeText = 'REPLAY PAUSED';
       } else {
-        badgeClass = 'replay-running';
+        badgeClass = 'live';
         badgeText = 'REPLAY RUNNING';
       }
     } else {
@@ -903,11 +882,67 @@ class F1TickerCard extends HTMLElement {
       const isLiveActive = sessionStatus && isAvailable(sessionStatus) && ['live', 'started'].includes(sessionStatus.state.toLowerCase());
       if (isLiveActive) {
         badgeClass = 'live';
-        badgeText = 'LIVE SESSION';
+        badgeText = 'LIVE';
       } else {
         badgeClass = 'before';
-        badgeText = 'BEFORE';
+        badgeText = 'READY';
       }
+    }
+
+    // 4. Determine Current Track Status (Enum strings, numeric codes 1,2,4,5,6,7, and RC bulletins)
+    let currentTrackStatus = 'CLEAR';
+    if (track && isAvailable(track)) {
+      const s = String(track.state || '').trim().toUpperCase();
+      if (!isPureNumber(s)) {
+        currentTrackStatus = s;
+      } else if (s === '1') {
+        currentTrackStatus = 'CLEAR';
+      } else if (s === '2') {
+        currentTrackStatus = 'YELLOW';
+      } else if (s === '4') {
+        currentTrackStatus = 'SC';
+      } else if (s === '5') {
+        currentTrackStatus = 'RED';
+      } else if (s === '6' || s === '7') {
+        currentTrackStatus = 'VSC';
+      }
+    }
+
+    // Inspect active race control notices for safety car/VSC/red flags if track sensor reports CLEAR
+    if (currentTrackStatus === 'CLEAR' || currentTrackStatus === 'UNKNOWN') {
+      const checkRcText = (msg) => {
+        const u = String(msg || '').toUpperCase();
+        if (u.includes('VIRTUAL SAFETY CAR') || u.includes('VSC')) {
+          if (!u.includes('ENDED') && !u.includes('ENDING') && !u.includes('CLEAR')) return 'VSC';
+        }
+        if (u.includes('SAFETY CAR') && !u.includes('VIRTUAL')) {
+          if (!u.includes('IN THIS LAP') && !u.includes('ENDING') && !u.includes('CLEAR')) return 'SC';
+        }
+        if (u.includes('RED FLAG')) return 'RED';
+        if (u.includes('YELLOW FLAG')) return 'YELLOW';
+        return null;
+      };
+
+      if (rc && isAvailable(rc)) {
+        let rcFlag = checkRcText(rc.state);
+        if (!rcFlag && rc.attributes && Array.isArray(rc.attributes.history) && rc.attributes.history.length > 0) {
+          rcFlag = checkRcText(rc.attributes.history[0].message);
+        }
+        if (rcFlag) currentTrackStatus = rcFlag;
+      }
+    }
+
+    const trackConf = this._getTrackStatusConfig(currentTrackStatus);
+
+    // Dynamically update Idle Overlay so tracker status ALWAYS matches actual track status
+    const idleTag = this.shadowRoot.getElementById('idle-tag');
+    const idleText = this.shadowRoot.getElementById('idle-text');
+    if (idleTag && idleText) {
+      idleTag.className = `tag ${trackConf.tag}`;
+      idleTag.textContent = trackConf.label;
+      idleText.textContent = (currentTrackStatus === 'CLEAR')
+        ? 'MONITORING RACE CONTROL'
+        : trackConf.text;
     }
 
     // Drivers list from positions sensor
@@ -943,17 +978,13 @@ class F1TickerCard extends HTMLElement {
     }
 
     // 5. Track Status with Dynamic Color Coding matching f1_sensor
-    if (this._config.show_track_status !== false && isAvailable(track)) {
-      const rawTrack = track.state.trim().toUpperCase();
-      if (!isPureNumber(rawTrack) && rawTrack !== 'UNKNOWN') {
-        const trackConf = this._getTrackStatusConfig(rawTrack);
-        items.push({
-          id: 'track-status',
-          tag: trackConf.tag,
-          label: trackConf.label,
-          text: trackConf.text,
-        });
-      }
+    if (this._config.show_track_status !== false && currentTrackStatus !== 'CLEAR' && currentTrackStatus !== 'UNKNOWN') {
+      items.push({
+        id: 'track-status',
+        tag: trackConf.tag,
+        label: trackConf.label,
+        text: trackConf.text,
+      });
     }
 
     // 6. Fastest Lap
@@ -973,8 +1004,7 @@ class F1TickerCard extends HTMLElement {
     }
 
     // 7. On-Track Battles (Suppressed under yellow/SC/VSC, capped to Top 1 closest duel <= 1.0s)
-    const rawTrackUpper = (track && track.state) ? track.state.trim().toUpperCase() : 'CLEAR';
-    const isFlagActive = ['YELLOW', 'SC', 'VSC', 'RED'].includes(rawTrackUpper);
+    const isFlagActive = ['YELLOW', 'SC', 'VSC', 'RED'].includes(currentTrackStatus);
 
     if (this._config.show_battles !== false && drivers.length > 1 && !isFlagActive) {
       let battleCount = 0;
@@ -1059,24 +1089,9 @@ class F1TickerCard extends HTMLElement {
       }
     }
 
-    // Fallback if no items currently active
-    if (items.length === 0) {
-      if (isSeeking) {
-        items.push({ id: 'fallback-seeking', tag: 'tag-track-sc', label: '↶ REPLAY SEEK', text: 'Synchronizing timeline to new timestamp...' });
-      } else {
-        if (isAvailable(track) && !isPureNumber(track.state)) {
-          const trackConf = this._getTrackStatusConfig(track.state);
-          items.push({ id: 'fallback-track', tag: trackConf.tag, label: trackConf.label, text: trackConf.text });
-        }
-        if (isAvailable(nextRace) && nextRace.attributes && nextRace.attributes.race_name) {
-          items.push({ id: 'fallback-next', tag: 'tag-neutral', label: '🏁 NEXT GP', text: nextRace.attributes.race_name });
-        }
-        if (isReplayMode) {
-          items.push({ id: 'fallback-replay', tag: 'tag-neutral', label: '↶ REPLAY', text: 'No active incident notices for current replay session' });
-        } else {
-          items.push({ id: 'fallback-before', tag: 'tag-neutral', label: 'BEFORE', text: 'Waiting for live track session to start' });
-        }
-      }
+    // Fallback notice if user is seeking
+    if (items.length === 0 && isSeeking) {
+      items.push({ id: 'fallback-seeking', tag: 'tag-track-sc', label: '↶ REPLAY SEEK', text: 'Synchronizing timeline to new timestamp...' });
     }
 
     // Update Header Texts & Status Badge
@@ -1097,7 +1112,7 @@ class F1TickerCard extends HTMLElement {
 
     const statusPill = this.shadowRoot.getElementById('status-pill');
     if (statusPill) {
-      statusPill.className = `wh-live-badge ${badgeClass}`;
+      statusPill.className = ('wh-live-badge ' + badgeClass).trim();
       statusPill.innerHTML = `<span class="wh-live-dot"></span><span id="status-text">${badgeText}</span>`;
     }
 
@@ -1200,45 +1215,45 @@ class F1TickerCard extends HTMLElement {
 
   _getTrackStatusConfig(raw) {
     const s = String(raw || '').trim().toUpperCase();
-    if (s.includes('RED')) {
+    if (s.includes('RED') || s === '5') {
       return {
         tag: 'tag-track-red',
         label: '🛑 RED FLAG',
-        text: s.includes('FLAG') ? s : 'RED FLAG - SESSION SUSPENDED',
+        text: 'RED FLAG - SESSION SUSPENDED',
       };
     }
-    if (s === 'SC' || (s.includes('SAFETY') && !s.includes('VIRTUAL'))) {
+    if (s === 'SC' || s === '4' || (s.includes('SAFETY') && !s.includes('VIRTUAL'))) {
       return {
         tag: 'tag-track-sc',
         label: '⚠️ SAFETY CAR',
-        text: s.includes('SAFETY') ? s : 'SAFETY CAR DEPLOYED',
+        text: 'SAFETY CAR DEPLOYED',
       };
     }
-    if (s === 'VSC' || s.includes('VIRTUAL')) {
+    if (s === 'VSC' || s === '6' || s === '7' || s.includes('VIRTUAL')) {
       return {
         tag: 'tag-track-vsc',
         label: '⚠️ VSC',
-        text: s.includes('VSC') || s.includes('VIRTUAL') ? s : 'VIRTUAL SAFETY CAR DEPLOYED',
+        text: 'VIRTUAL SAFETY CAR DEPLOYED',
       };
     }
-    if (s.includes('YELLOW')) {
+    if (s.includes('YELLOW') || s === '2') {
       return {
         tag: 'tag-track-yellow',
         label: '⚑ YELLOW FLAG',
-        text: s.includes('FLAG') ? s : 'YELLOW FLAG',
+        text: 'YELLOW FLAG IN SECTOR',
       };
     }
     if (s.includes('BLUE')) {
       return {
         tag: 'tag-track-blue',
         label: '⚑ BLUE FLAG',
-        text: s,
+        text: 'BLUE FLAGS IN OPERATION',
       };
     }
     return {
       tag: 'tag-track-clear',
-      label: '✓ TRACK STATUS',
-      text: s === 'CLEAR' || s === 'GREEN' ? 'TRACK CLEAR' : s,
+      label: '🟢 TRACK CLEAR',
+      text: 'MONITORING RACE CONTROL',
     };
   }
 
@@ -1521,7 +1536,7 @@ if (!customElements.get('f1-ticker-card')) {
     preview: true,
   });
   console.info(
-    '%c F1-TICKER-CARD %c v2.0.0 ',
+    '%c F1-TICKER-CARD %c v2.1.0 ',
     'color: white; background: #e10600; font-weight: 700;',
     'color: #040711; background: #38bdf8; font-weight: 700;'
   );

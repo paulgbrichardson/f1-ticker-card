@@ -1,7 +1,7 @@
 # F1 Race Control Ticker Card (`custom:f1-ticker-card`)
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/default)
-[![version](https://img.shields.io/badge/version-2.0.0-e10600.svg)](https://github.com)
+[![version](https://img.shields.io/badge/version-2.1.0-e10600.svg)](https://github.com)
 [![license](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.1%2B-blue.svg)](https://www.home-assistant.io)
 
