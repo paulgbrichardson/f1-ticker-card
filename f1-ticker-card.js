@@ -1,6 +1,6 @@
 /**
  * F1 Live Race Control Ticker Card (f1-ticker-card)
- * Version: 2.1.1
+ * Version: 2.2.0
  * 
  * Hardware-accelerated continuous 60fps single-message conveyor ticker.
  * Fully unified with the Nicxe/f1_sensor Weekend Hub design language:
@@ -9,6 +9,7 @@
  * - Mobile container queries (@container max-width: 680px) for seamless pitwall & phone viewports
  * - Standardized status pill badge (.wh-live-badge) with exact Weekend Hub success tokens & solid glowing dot
  * - Dynamic Idle Track Status Engine: idle overlay always mirrors actual track status (VSC, SC, Yellow, Red, Clear)
+ * - Integrated Header Spoiler Toggle (.wh-spoiler-btn): standalone spoiler protection toggle directly in card header
  * - Preserves high-performance Single-Pass Retirement, Adaptive Speed Governor, and Replay Time-Travel.
  */
 
@@ -95,6 +96,8 @@ class F1TickerCard extends HTMLElement {
       title: 'LIVE RACE CONTROL TICKER',
       subtitle: 'INCIDENTS & TRACK LIMITS',
       speed: 35,
+      show_spoiler_toggle: true,
+      spoiler_entity: 'switch.f1_no_spoiler_mode',
       show_race_control: true,
       show_track_status: true,
       show_fastest_lap: true,
@@ -113,6 +116,8 @@ class F1TickerCard extends HTMLElement {
       title: 'LIVE RACE CONTROL TICKER',
       subtitle: 'INCIDENTS & TRACK LIMITS',
       speed: 35,
+      show_spoiler_toggle: true,
+      spoiler_entity: 'switch.f1_no_spoiler_mode',
       show_race_control: true,
       show_track_status: true,
       show_fastest_lap: true,
@@ -343,12 +348,80 @@ class F1TickerCard extends HTMLElement {
         box-shadow: 0 0 10px currentColor;
       }
 
+      /* Header Actions & Spoiler Toggle */
+      .wh-header-actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+
+      .wh-spoiler-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 26px;
+        padding: 0 10px;
+        border-radius: 999px;
+        border: 1px solid var(--f1-card-divider-strong);
+        background: var(--f1-card-chip);
+        color: var(--f1-card-muted);
+        font-family: var(--f1-card-display-font-family, 'Formula1 Display', sans-serif);
+        font-size: 9px;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        white-space: nowrap;
+        cursor: pointer;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        user-select: none;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      .wh-spoiler-btn:hover {
+        border-color: rgba(255, 255, 255, 0.25);
+        color: var(--f1-card-text);
+        transform: translateY(-1px);
+      }
+
+      .wh-spoiler-btn:active {
+        transform: translateY(1px);
+      }
+
+      .wh-spoiler-btn.active {
+        border-color: var(--f1-status-danger-border);
+        background: var(--f1-status-danger-bg);
+        color: var(--f1-status-danger-text);
+        box-shadow: 0 0 12px rgba(255, 59, 48, 0.22);
+      }
+
+      .wh-spoiler-btn.active:hover {
+        border-color: rgba(255, 59, 48, 0.5);
+      }
+
+      .wh-spoiler-icon {
+        --mdc-icon-size: 14px;
+        width: 14px;
+        height: 14px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .wh-spoiler-btn.active .wh-spoiler-icon {
+        color: var(--f1-marker-red);
+      }
+
       /* Responsive Container Queries matching Weekend Hub */
       @container (max-width: 680px) {
         .wh-header {
           grid-template-columns: 1fr;
           gap: 10px;
           padding: 14px 16px 12px;
+        }
+        .wh-header-actions {
+          justify-content: flex-start;
         }
         .wh-live-badge {
           justify-self: start;
@@ -361,6 +434,15 @@ class F1TickerCard extends HTMLElement {
       @container (max-width: 420px) {
         .wh-header {
           padding: 12px 14px 10px;
+        }
+        .wh-header-actions {
+          gap: 6px;
+        }
+        .wh-spoiler-btn,
+        .wh-live-badge {
+          font-size: 8px;
+          padding: 0 8px;
+          min-height: 24px;
         }
         .wh-title {
           font-size: 18px;
@@ -541,9 +623,15 @@ class F1TickerCard extends HTMLElement {
               <h2 class="wh-title" id="title-text">${this._config.title || 'LIVE RACE CONTROL TICKER'}</h2>
               <div class="wh-subtitle" id="subtitle-text">${this._config.subtitle !== undefined && this._config.subtitle !== null ? this._config.subtitle : 'INCIDENTS & TRACK LIMITS'}</div>
             </div>
-            <div class="wh-live-badge before" id="status-pill">
-              <span class="wh-live-dot"></span>
-              <span id="status-text">BEFORE</span>
+            <div class="wh-header-actions">
+              <button class="wh-spoiler-btn" id="spoiler-toggle" type="button" title="Toggle Spoiler Protection">
+                <ha-icon class="wh-spoiler-icon" id="spoiler-icon" icon="mdi:eye-outline"></ha-icon>
+                <span id="spoiler-label">NO SPOILER: OFF</span>
+              </button>
+              <div class="wh-live-badge before" id="status-pill">
+                <span class="wh-live-dot"></span>
+                <span id="status-text">BEFORE</span>
+              </div>
             </div>
           </header>
           <div class="ticker-container" id="ticker-box">
@@ -556,6 +644,17 @@ class F1TickerCard extends HTMLElement {
         </section>
       </ha-card>
     `;
+
+    const spoilerBtn = this.shadowRoot.getElementById('spoiler-toggle');
+    if (spoilerBtn) {
+      spoilerBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        if (!this._hass) return;
+        const entityId = this._config.spoiler_entity || 'switch.f1_no_spoiler_mode';
+        this._hass.callService('switch', 'toggle', { entity_id: entityId });
+      });
+    }
 
     const box = this.shadowRoot.getElementById('ticker-box');
     if (box) {
@@ -1116,6 +1215,31 @@ class F1TickerCard extends HTMLElement {
       statusPill.innerHTML = `<span class="wh-live-dot"></span><span id="status-text">${badgeText}</span>`;
     }
 
+    // Update Spoiler Toggle Button
+    const spoilerEntityId = this._config.spoiler_entity || 'switch.f1_no_spoiler_mode';
+    const spoilerState = this._hass.states[spoilerEntityId];
+    const spoilerBtn = this.shadowRoot.getElementById('spoiler-toggle');
+    const spoilerIcon = this.shadowRoot.getElementById('spoiler-icon');
+    const spoilerLabel = this.shadowRoot.getElementById('spoiler-label');
+
+    if (spoilerBtn) {
+      if (this._config.show_spoiler_toggle === false) {
+        spoilerBtn.style.display = 'none';
+      } else {
+        spoilerBtn.style.display = 'inline-flex';
+        const isSpoilerOn = spoilerState ? spoilerState.state === 'on' : false;
+        if (isSpoilerOn) {
+          if (!spoilerBtn.classList.contains('active')) spoilerBtn.classList.add('active');
+          if (spoilerIcon && spoilerIcon.getAttribute('icon') !== 'mdi:eye-off') spoilerIcon.setAttribute('icon', 'mdi:eye-off');
+          if (spoilerLabel && spoilerLabel.textContent !== 'NO SPOILER: ON') spoilerLabel.textContent = 'NO SPOILER: ON';
+        } else {
+          if (spoilerBtn.classList.contains('active')) spoilerBtn.classList.remove('active');
+          if (spoilerIcon && spoilerIcon.getAttribute('icon') !== 'mdi:eye-outline') spoilerIcon.setAttribute('icon', 'mdi:eye-outline');
+          if (spoilerLabel && spoilerLabel.textContent !== 'NO SPOILER: OFF') spoilerLabel.textContent = 'NO SPOILER: OFF';
+        }
+      }
+    }
+
     // Sync track items
     this._syncTrack(items);
   }
@@ -1286,7 +1410,7 @@ class F1TickerCardEditor extends HTMLElement {
 
   _updateContent() {
     if (!this._config) return;
-    const textFields = ['kicker', 'title', 'subtitle', 'speed'];
+    const textFields = ['kicker', 'title', 'subtitle', 'speed', 'spoiler_entity'];
     textFields.forEach(id => {
       const el = this.querySelector(`#${id}`);
       if (el && !this._isFocused(el)) {
@@ -1298,6 +1422,7 @@ class F1TickerCardEditor extends HTMLElement {
     });
 
     const boolFields = [
+      'show_spoiler_toggle',
       'show_race_control',
       'show_track_status',
       'show_fastest_lap',
@@ -1431,6 +1556,24 @@ class F1TickerCardEditor extends HTMLElement {
           <input type="number" class="input-text" id="speed" min="10" max="120" value="${this._config.speed || 35}">
         </div>
 
+        <div class="section-header">Spoiler Protection</div>
+
+        <div class="config-row">
+          <div class="config-label">
+            <span class="label-title">🛡️ Header Spoiler Toggle</span>
+            <span class="label-desc">Show interactive No Spoiler Mode pill button directly in card header</span>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="show_spoiler_toggle" ${this._config.show_spoiler_toggle !== false ? 'checked' : ''}>
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <div class="input-group">
+          <label class="label-title">Spoiler Switch Entity</label>
+          <input type="text" class="input-text" id="spoiler_entity" value="${this._config.spoiler_entity || 'switch.f1_no_spoiler_mode'}" placeholder="switch.f1_no_spoiler_mode">
+        </div>
+
         <div class="section-header">Live Action & Safety Feeds</div>
 
         <div class="config-row">
@@ -1551,6 +1694,8 @@ class F1TickerCardEditor extends HTMLElement {
       title: this.querySelector('#title')?.value ?? '',
       subtitle: this.querySelector('#subtitle')?.value ?? '',
       speed: parseInt(this.querySelector('#speed')?.value, 10) || 35,
+      show_spoiler_toggle: this.querySelector('#show_spoiler_toggle')?.checked ?? true,
+      spoiler_entity: this.querySelector('#spoiler_entity')?.value ?? 'switch.f1_no_spoiler_mode',
       show_race_control: this.querySelector('#show_race_control')?.checked ?? true,
       show_track_status: this.querySelector('#show_track_status')?.checked ?? true,
       show_fastest_lap: this.querySelector('#show_fastest_lap')?.checked ?? true,
@@ -1587,7 +1732,7 @@ if (!customElements.get('f1-ticker-card')) {
     preview: true,
   });
   console.info(
-    '%c F1-TICKER-CARD %c v2.1.1 ',
+    '%c F1-TICKER-CARD %c v2.2.0 ',
     'color: white; background: #e10600; font-weight: 700;',
     'color: #040711; background: #38bdf8; font-weight: 700;'
   );
