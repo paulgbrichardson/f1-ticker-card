@@ -1,15 +1,14 @@
 /**
  * F1 Live Race Control Ticker Card (f1-ticker-card)
- * Version: 1.9.0
+ * Version: 2.0.0
  * 
  * Hardware-accelerated continuous 60fps single-message conveyor ticker.
- * Natively matches Nicxe/f1_sensor design system with authentic Formula 1 typography,
- * fully-rounded capsule status pills, theme-matched color variables, and graceful incoming message loading.
- * 
- * Features Single-Pass Retirement, Adaptive Speed Governor, and Replay Time-Travel:
- * Automatically detects playback position jumps, backwards rewinds (-30s), forward fast-forward,
- * and session swaps — instantly emptying stale future telemetry and loading fresh snapshot data
- * from the exact new timestamp.
+ * Fully unified with the Nicxe/f1_sensor Weekend Hub design language:
+ * - Shared .wh-shell triple-gradient carbon chassis & 4px red left indicator stripe
+ * - Authentic Formula 1 Display typography with responsive clamp scaling
+ * - Mobile container queries (@container max-width: 680px) for seamless pitwall & phone viewports
+ * - Standardized status pill badge (.wh-live-badge) with animated pulse dot
+ * - Preserves high-performance Single-Pass Retirement, Adaptive Speed Governor, and Replay Time-Travel.
  */
 
 // Automated font loader matching Nicxe/f1_sensor
@@ -91,6 +90,7 @@ class F1TickerCard extends HTMLElement {
 
   static getStubConfig() {
     return {
+      kicker: 'RACE CONTROL FEED',
       title: 'LIVE RACE CONTROL TICKER',
       subtitle: 'INCIDENTS & TRACK LIMITS',
       speed: 35,
@@ -108,6 +108,7 @@ class F1TickerCard extends HTMLElement {
 
   setConfig(config) {
     this._config = Object.assign({
+      kicker: 'RACE CONTROL FEED',
       title: 'LIVE RACE CONTROL TICKER',
       subtitle: 'INCIDENTS & TRACK LIMITS',
       speed: 35,
@@ -162,137 +163,243 @@ class F1TickerCard extends HTMLElement {
       :host {
         display: block;
         width: 100%;
-        color: var(--f1-text, var(--primary-text-color, #e9edf3));
-        font-family: 'Formula1 Display', 'Formula1 Wide', 'F1 Barlow Condensed', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
-        font-size: 1rem;
-        line-height: 1.5;
         box-sizing: border-box;
+        font-family: var(--f1-card-body-font-family, 'Formula1 Display', sans-serif);
 
-        /* F1 Sensor Theme Colors matching Nicxe/f1_sensor */
+        /* Nicxe/f1_sensor Weekend Hub Theme Tokens */
+        --f1-card-bg: #0b0b0d;
+        --f1-card-bg-soft: #131315;
+        --f1-card-bg-end: #0a0a0a;
+        --f1-card-text: #f5f5f5;
+        --f1-card-muted: rgba(255, 255, 255, 0.65);
+        --f1-card-soft: rgba(255, 255, 255, 0.42);
+        --f1-card-border: rgba(255, 255, 255, 0.08);
+        --f1-card-divider: rgba(255, 255, 255, 0.08);
+        --f1-card-divider-strong: rgba(255, 255, 255, 0.12);
+        --f1-card-chip: rgba(255, 255, 255, 0.06);
+        --f1-card-panel: rgba(255, 255, 255, 0.04);
+        --f1-card-panel-soft: rgba(255, 255, 255, 0.025);
+        --f1-card-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+        --f1-card-display-font-family: 'Formula1 Display', sans-serif;
+        --f1-card-body-font-family: 'Formula1 Display', sans-serif;
+        --f1-card-label-font-family: 'Formula1 Display', sans-serif;
+
+        --f1-marker-red: #ff3b30;
+        --f1-marker-yellow: #ffd60a;
+        --f1-marker-green: #34c759;
+        --f1-marker-blue: #0a84ff;
+        --f1-marker-purple: #8b5cf6;
+        --f1-marker-orange: #ff9500;
+
         --f1-status-info: #38bdf8;
+        --f1-status-info-text: #bfdbfe;
+        --f1-status-info-bg: rgba(59, 130, 246, 0.14);
+        --f1-status-info-border: rgba(96, 165, 250, 0.28);
         --f1-status-warning: #f59e0b;
-        --f1-status-yellow: #ffd60a;
+        --f1-status-warning-text: #fde68a;
+        --f1-status-warning-bg: rgba(251, 191, 36, 0.10);
+        --f1-status-warning-border: rgba(251, 191, 36, 0.24);
         --f1-status-success: #34c759;
+        --f1-status-success-text: #86efac;
+        --f1-status-success-bg: rgba(52, 199, 89, 0.16);
+        --f1-status-success-border: rgba(52, 199, 89, 0.34);
         --f1-status-danger: #ff3b30;
-        --f1-status-orange: #ff9500;
-        --f1-status-purple: #a855f7;
-        --f1-status-neutral: #94a3b8;
+        --f1-status-danger-text: #fca5a5;
+        --f1-status-danger-bg: rgba(255, 59, 48, 0.14);
+        --f1-status-danger-border: rgba(255, 59, 48, 0.32);
+        --f1-status-neutral: #a3a3a3;
+        --f1-status-neutral-text: #d4d4d8;
+        --f1-status-neutral-bg: rgba(163, 163, 163, 0.12);
+        --f1-status-neutral-border: rgba(163, 163, 163, 0.36);
+        --f1-status-purple: #8b5cf6;
+        --f1-status-purple-text: #d8b4fe;
+        --f1-status-purple-bg: rgba(139, 92, 246, 0.22);
+        --f1-status-purple-border: rgba(139, 92, 246, 0.45);
+        --f1-status-orange: #f97316;
+        --f1-status-orange-text: #fed7aa;
+        --f1-status-orange-bg: rgba(249, 115, 22, 0.14);
+        --f1-status-orange-border: rgba(249, 115, 22, 0.30);
       }
+
       * {
         box-sizing: border-box;
       }
+
       ha-card {
-        background: var(--f1-surface, var(--ha-card-background, var(--card-background-color, #15151e)));
-        border: 1px solid var(--f1-border, #6c7480);
-        border-top: 3px solid var(--f1-accent, #e10600);
-        border-radius: var(--f1-card-radius, var(--ha-card-border-radius, 14px));
-        color: var(--f1-text, var(--primary-text-color, #e9edf3));
+        padding: 0;
+        background: transparent;
+        border: 0;
         box-shadow: none;
-        overflow: hidden;
+      }
+
+      /* Authentic Weekend Hub Outer Shell (.wh-shell) */
+      .wh-shell {
         position: relative;
-        width: 100%;
+        overflow: hidden;
+        border: 1px solid var(--f1-card-border);
+        border-radius: var(--ha-card-border-radius, 12px);
+        background:
+          linear-gradient(110deg, transparent 0 47%, var(--f1-card-panel-soft) 47% 48%, transparent 48% 100%),
+          radial-gradient(circle at 93% -8%, rgba(255, 59, 48, 0.22), transparent 38%),
+          linear-gradient(155deg, var(--f1-card-bg) 0%, var(--f1-card-bg-soft) 68%, var(--f1-card-bg-end) 100%);
+        box-shadow: var(--f1-card-shadow);
+        color: var(--f1-card-text);
+        container-type: inline-size;
       }
-      .header-bar {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 8px 14px;
-        background: var(--f1-panel, rgba(127, 127, 127, 0.07));
-        border-bottom: 1px solid var(--f1-divider, rgba(127, 127, 127, 0.25));
+
+      .wh-shell::before {
+        content: '';
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 4px;
+        background: var(--f1-marker-red);
+        z-index: 5;
       }
-      .title-group {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        flex-wrap: wrap;
+
+      /* Weekend Hub Header Architecture (.wh-header) */
+      .wh-header {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: start;
+        gap: 16px;
+        padding: clamp(14px, 2.5vw, 22px) clamp(16px, 3.2vw, 28px) 14px;
+        border-bottom: 1px solid var(--f1-card-divider);
       }
-      .fia-badge {
-        background: var(--f1-accent, #e10600);
-        color: #fff;
-        font-family: 'Formula1 Wide', 'Formula1 Display', 'F1 Barlow Condensed', sans-serif !important;
-        font-size: 0.68rem;
-        font-weight: 700;
-        letter-spacing: 0.08em;
-        padding: 2px 7px;
-        border-radius: 4px;
-        text-transform: uppercase;
-      }
-      .title-text {
-        font-family: 'Formula1 Wide', 'Formula1 Display', 'F1 Barlow Condensed', sans-serif !important;
-        font-size: 0.95rem;
-        font-weight: 700;
-        letter-spacing: 0.04em;
-        color: var(--f1-text, var(--primary-text-color, #e9edf3));
-        text-transform: uppercase;
-      }
-      .subtitle-text {
-        font-family: 'Formula1 Display', 'Formula1 Wide', 'F1 Barlow Condensed', sans-serif !important;
-        font-size: 0.75rem;
-        font-weight: 600;
-        letter-spacing: 0.04em;
-        color: var(--f1-muted, var(--secondary-text-color, #b9c1ce));
+
+      .wh-kicker {
+        color: var(--f1-marker-red);
+        font-family: var(--f1-card-label-font-family, 'Formula1 Display', sans-serif);
+        font-size: 9px;
+        font-weight: 800;
+        letter-spacing: 0.2em;
         text-transform: uppercase;
       }
 
-      /* Official F1 Status Pills matching Nicxe/f1_sensor rc-status-pill / ls-status-pill */
-      .status-pill {
+      .wh-title {
+        margin: 5px 0 2px;
+        font-family: var(--f1-card-display-font-family, 'Formula1 Display', sans-serif);
+        font-size: clamp(20px, 3.2vw, 32px);
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        line-height: 1;
+        text-transform: uppercase;
+        color: var(--f1-card-text);
+      }
+
+      .wh-subtitle {
+        color: var(--f1-card-muted);
+        font-family: var(--f1-card-body-font-family, 'Formula1 Display', sans-serif);
+        font-size: 11px;
+        line-height: 1.4;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+
+      /* Standardized Weekend Hub Status Badge (.wh-live-badge) */
+      .wh-live-badge {
         display: inline-flex;
         align-items: center;
-        justify-content: center;
-        gap: 6px;
-        min-height: 24px;
-        padding: 3px 12px;
-        border-radius: 999px; /* Round pill corners */
-        font-family: 'Formula1 Wide', 'Formula1 Display', sans-serif !important;
-        font-size: 0.68rem;
-        font-weight: 700;
-        letter-spacing: 0.05em;
+        gap: 7px;
+        min-height: 26px;
+        padding: 0 10px;
+        border: 1px solid var(--f1-card-divider-strong);
+        border-radius: 999px;
+        background: var(--f1-card-chip);
+        color: var(--f1-card-muted);
+        font-family: var(--f1-card-display-font-family, 'Formula1 Display', sans-serif);
+        font-size: 9px;
+        font-weight: 800;
+        letter-spacing: 0.12em;
         text-transform: uppercase;
         white-space: nowrap;
-        border: 1px solid color-mix(in srgb, currentColor 46%, transparent);
-        background: color-mix(in srgb, currentColor 14%, transparent);
-        transition: all 0.25s ease;
       }
-      .status-replay-running {
-        color: #34c759; /* Green playing state matching f1_sensor rc-status-pill.playing */
+
+      .wh-live-badge.live {
+        border-color: var(--f1-status-danger-border);
+        background: var(--f1-status-danger-bg);
+        color: var(--f1-status-danger);
       }
-      .status-replay-paused {
-        color: #f59e0b; /* Amber paused state matching f1_sensor rc-status-pill.paused */
+
+      .wh-live-badge.replay-running {
+        border-color: var(--f1-status-success-border);
+        background: var(--f1-status-success-bg);
+        color: var(--f1-status-success);
       }
-      .status-replay-seeking {
-        color: #ff9500; /* Orange seeking state matching f1_sensor rc-status-pill.loading */
+
+      .wh-live-badge.replay-paused {
+        border-color: var(--f1-status-warning-border);
+        background: var(--f1-status-warning-bg);
+        color: var(--f1-status-warning);
       }
-      .status-live {
-        color: #ff3b30; /* Red live session indicator */
+
+      .wh-live-badge.replay-seeking {
+        border-color: var(--f1-status-orange-border);
+        background: var(--f1-status-orange-bg);
+        color: var(--f1-status-orange);
       }
-      .status-before {
-        color: #38bdf8; /* Blue standby/before state matching f1_sensor ready */
+
+      .wh-live-badge.before {
+        border-color: var(--f1-status-info-border);
+        background: var(--f1-status-info-bg);
+        color: var(--f1-status-info);
       }
-      .pulse-dot {
-        width: 6px;
-        height: 6px;
+
+      .wh-live-dot {
+        width: 7px;
+        height: 7px;
         border-radius: 50%;
         background: currentColor;
-        box-shadow: 0 0 6px currentColor;
-        animation: pulse 1.5s infinite ease-in-out;
+        box-shadow: 0 0 10px currentColor;
       }
-      @keyframes pulse {
+
+      .wh-live-badge.live .wh-live-dot,
+      .wh-live-badge.replay-running .wh-live-dot,
+      .wh-live-badge.replay-seeking .wh-live-dot {
+        animation: wh-pulse 1.5s infinite ease-in-out;
+      }
+
+      @keyframes wh-pulse {
         0%, 100% { opacity: 1; transform: scale(1); }
-        50% { opacity: 0.35; transform: scale(0.8); }
+        50% { opacity: 0.35; transform: scale(0.85); }
+      }
+
+      /* Responsive Container Queries matching Weekend Hub */
+      @container (max-width: 680px) {
+        .wh-header {
+          grid-template-columns: 1fr;
+          gap: 10px;
+          padding: 14px 16px 12px;
+        }
+        .wh-live-badge {
+          justify-self: start;
+        }
+        .wh-title {
+          font-size: 20px;
+        }
+      }
+
+      @container (max-width: 420px) {
+        .wh-header {
+          padding: 12px 14px 10px;
+        }
+        .wh-title {
+          font-size: 18px;
+        }
       }
 
       /* Single-Message Conveyor Marquee Viewport */
       .ticker-container {
         position: relative;
         overflow: hidden;
-        height: 40px;
+        height: 42px;
         display: flex;
         align-items: center;
-        background: var(--f1-panel, rgba(127, 127, 127, 0.04));
+        background: var(--f1-card-panel-soft);
         width: 100%;
         cursor: default;
         user-select: none;
       }
+
       .ticker-idle-overlay {
         position: absolute;
         top: 0;
@@ -304,18 +411,21 @@ class F1TickerCard extends HTMLElement {
         justify-content: center;
         gap: 12px;
         pointer-events: none;
-        opacity: 0.75;
+        opacity: 0.8;
         transition: opacity 0.25s ease;
         z-index: 1;
-        font-family: 'Formula1 Wide', 'Formula1 Display', sans-serif !important;
-        font-size: 0.7rem;
-        letter-spacing: 0.05em;
+        font-family: var(--f1-card-display-font-family, 'Formula1 Display', sans-serif) !important;
+        font-size: 0.72rem;
+        letter-spacing: 0.08em;
+        color: var(--f1-card-muted);
         user-select: none;
       }
+
       .ticker-idle-overlay.hidden {
         opacity: 0;
         visibility: hidden;
       }
+
       .ticker-track {
         display: inline-flex;
         align-items: center;
@@ -325,66 +435,68 @@ class F1TickerCard extends HTMLElement {
         z-index: 2;
         width: max-content;
       }
+
       .ticker-unit {
         display: inline-flex;
         align-items: center;
         flex-shrink: 0;
       }
+
       .ticker-gap {
         display: inline-block;
         flex-shrink: 0;
         height: 1px;
       }
+
       .ticker-item {
         display: inline-flex;
         align-items: center;
         gap: 8px;
-        font-family: 'Formula1 Display', 'Formula1 Wide', sans-serif !important;
-        font-size: 0.92rem;
-        font-weight: 500;
-        letter-spacing: 0.03em;
-        color: var(--f1-text, var(--primary-text-color, #e9edf3));
+        font-family: var(--f1-card-body-font-family, 'Formula1 Display', sans-serif) !important;
+        font-size: 0.88rem;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        color: var(--f1-card-text);
         white-space: nowrap;
       }
 
-      /* Category Tags matching Nicxe/f1_sensor capsule pill standard */
+      /* Official Capsule Pills for Ticker Bulletins */
       .tag {
-        font-family: 'Formula1 Wide', 'Formula1 Display', sans-serif !important;
-        font-size: 0.65rem;
+        font-family: var(--f1-card-display-font-family, 'Formula1 Display', sans-serif) !important;
+        font-size: 0.68rem;
         font-weight: 700;
-        letter-spacing: 0.05em;
+        letter-spacing: 0.06em;
         text-transform: uppercase;
-        padding: 2px 9px;
-        border-radius: 999px; /* Fully rounded capsule pill corners */
-        border: 1px solid color-mix(in srgb, currentColor 46%, transparent);
-        background: color-mix(in srgb, currentColor 14%, transparent);
+        padding: 3px 10px;
+        border-radius: 999px;
+        border: 1px solid color-mix(in srgb, currentColor 40%, transparent);
+        background: color-mix(in srgb, currentColor 12%, transparent);
         display: inline-flex;
         align-items: center;
         gap: 5px;
         white-space: nowrap;
       }
 
-      /* Color-matched tags from f1_sensor design system */
       .tag-rc {
-        color: #ff3b30;
+        color: var(--f1-status-danger);
       }
       .tag-blue-flag {
-        color: #38bdf8;
+        color: var(--f1-status-info);
       }
       .tag-track-limits {
-        color: #f59e0b;
+        color: var(--f1-status-warning);
       }
       .tag-track-clear {
-        color: #34c759;
+        color: var(--f1-status-success);
       }
       .tag-track-yellow {
-        color: #ffd60a;
+        color: var(--f1-marker-yellow);
       }
       .tag-track-sc, .tag-track-vsc {
-        color: #ff9500;
+        color: var(--f1-marker-orange);
       }
       .tag-track-red {
-        color: #ff3b30;
+        color: var(--f1-marker-red);
         animation: pulse-red 1.2s infinite ease-in-out;
       }
       @keyframes pulse-red {
@@ -392,29 +504,29 @@ class F1TickerCard extends HTMLElement {
         50% { box-shadow: 0 0 10px rgba(255, 59, 48, 0.7); }
       }
       .tag-track-blue {
-        color: #38bdf8;
+        color: var(--f1-marker-blue);
       }
       .tag-fastest {
-        color: #a855f7;
+        color: var(--f1-status-purple);
       }
       .tag-battle {
-        color: #f59e0b;
+        color: var(--f1-status-warning);
       }
       .tag-pit {
-        color: #38bdf8;
+        color: var(--f1-status-info);
       }
       .tag-neutral {
-        color: #34c759;
+        color: var(--f1-status-success);
       }
       .tag-weather {
-        color: #38bdf8;
+        color: var(--f1-status-info);
       }
       .tag-fia, .tag-lap {
-        color: #94a3b8;
+        color: var(--f1-status-neutral);
       }
 
       .separator {
-        color: var(--f1-divider, rgba(127, 127, 127, 0.35));
+        color: var(--f1-card-divider-strong);
         font-size: 0.65rem;
         margin: 0 16px;
         user-select: none;
@@ -423,12 +535,12 @@ class F1TickerCard extends HTMLElement {
 
       /* Compact styling for high-frequency bulletins (blue flags, track limits) */
       .ticker-unit.unit-compact .ticker-item {
-        font-size: 0.82rem;
+        font-size: 0.80rem;
         gap: 6px;
       }
       .ticker-unit.unit-compact .tag {
-        font-size: 0.60rem;
-        padding: 2px 7px;
+        font-size: 0.62rem;
+        padding: 2px 8px;
       }
       .ticker-unit.unit-compact .separator {
         margin: 0 10px;
@@ -438,23 +550,26 @@ class F1TickerCard extends HTMLElement {
     this.shadowRoot.innerHTML = `
       <style>${style}</style>
       <ha-card>
-        <div class="header-bar">
-          <div class="title-group">
-            <span class="fia-badge">FIA</span>
-            <span class="title-text">${this._config.title}</span>
-            <span class="subtitle-text">${this._config.subtitle}</span>
+        <section class="wh-shell">
+          <header class="wh-header">
+            <div>
+              <div class="wh-kicker" id="kicker-text">${this._config.kicker || 'RACE CONTROL FEED'}</div>
+              <h2 class="wh-title" id="title-text">${this._config.title || 'LIVE RACE CONTROL TICKER'}</h2>
+              <div class="wh-subtitle" id="subtitle-text">${this._config.subtitle || 'INCIDENTS & TRACK LIMITS'}</div>
+            </div>
+            <div class="wh-live-badge before" id="status-pill">
+              <span class="wh-live-dot"></span>
+              <span id="status-text">BEFORE</span>
+            </div>
+          </header>
+          <div class="ticker-container" id="ticker-box">
+            <div class="ticker-idle-overlay" id="ticker-idle">
+              <span class="tag tag-track-clear">🟢 TRACK CLEAR</span>
+              <span class="ticker-text">MONITORING RACE CONTROL</span>
+            </div>
+            <div class="ticker-track" id="ticker-track"></div>
           </div>
-          <div class="status-pill status-before" id="status-pill">
-            <span id="status-text">BEFORE</span>
-          </div>
-        </div>
-        <div class="ticker-container" id="ticker-box">
-          <div class="ticker-idle-overlay" id="ticker-idle">
-            <span class="tag tag-clear">🟢 TRACK CLEAR</span>
-            <span class="ticker-text">MONITORING RACE CONTROL</span>
-          </div>
-          <div class="ticker-track" id="ticker-track"></div>
-        </div>
+        </section>
       </ha-card>
     `;
 
@@ -759,8 +874,8 @@ class F1TickerCard extends HTMLElement {
     }
 
     // 3. Status Pill Label & Theme Tone
-    let badgeClass = 'status-before';
-    let badgeHtml = 'BEFORE';
+    let badgeClass = 'before';
+    let badgeText = 'BEFORE';
 
     if (isReplayMode) {
       const isPaused = (
@@ -769,24 +884,24 @@ class F1TickerCard extends HTMLElement {
       );
 
       if (isSeeking) {
-        badgeClass = 'status-replay-seeking';
-        badgeHtml = '<span class="pulse-dot"></span> [SEEKING]';
+        badgeClass = 'replay-seeking';
+        badgeText = 'SEEKING';
       } else if (isPaused) {
-        badgeClass = 'status-replay-paused';
-        badgeHtml = '[REPLAY PAUSED]';
+        badgeClass = 'replay-paused';
+        badgeText = 'REPLAY PAUSED';
       } else {
-        badgeClass = 'status-replay-running';
-        badgeHtml = '<span class="pulse-dot"></span> REPLAY RUNNING';
+        badgeClass = 'replay-running';
+        badgeText = 'REPLAY RUNNING';
       }
     } else {
       // Live Mode
       const isLiveActive = sessionStatus && isAvailable(sessionStatus) && ['live', 'started'].includes(sessionStatus.state.toLowerCase());
       if (isLiveActive) {
-        badgeClass = 'status-live';
-        badgeHtml = '<span class="pulse-dot"></span> LIVE SESSION';
+        badgeClass = 'live';
+        badgeText = 'LIVE SESSION';
       } else {
-        badgeClass = 'status-before';
-        badgeHtml = 'BEFORE';
+        badgeClass = 'before';
+        badgeText = 'BEFORE';
       }
     }
 
@@ -959,11 +1074,24 @@ class F1TickerCard extends HTMLElement {
       }
     }
 
-    // Update Status Badge in Header
+    // Update Header Texts & Status Badge
+    const titleEl = this.shadowRoot.getElementById('title-text');
+    if (titleEl && titleEl.textContent !== (this._config.title || 'LIVE RACE CONTROL TICKER')) {
+      titleEl.textContent = this._config.title || 'LIVE RACE CONTROL TICKER';
+    }
+    const subtitleEl = this.shadowRoot.getElementById('subtitle-text');
+    if (subtitleEl && subtitleEl.textContent !== (this._config.subtitle || 'INCIDENTS & TRACK LIMITS')) {
+      subtitleEl.textContent = this._config.subtitle || 'INCIDENTS & TRACK LIMITS';
+    }
+    const kickerEl = this.shadowRoot.getElementById('kicker-text');
+    if (kickerEl && kickerEl.textContent !== (this._config.kicker || 'RACE CONTROL FEED')) {
+      kickerEl.textContent = this._config.kicker || 'RACE CONTROL FEED';
+    }
+
     const statusPill = this.shadowRoot.getElementById('status-pill');
     if (statusPill) {
-      statusPill.className = `status-pill ${badgeClass}`;
-      statusPill.innerHTML = badgeHtml;
+      statusPill.className = `wh-live-badge ${badgeClass}`;
+      statusPill.innerHTML = `<span class="wh-live-dot"></span><span id="status-text">${badgeText}</span>`;
     }
 
     // Sync track items
@@ -1214,6 +1342,10 @@ class F1TickerCardEditor extends HTMLElement {
       </style>
       <div class="card-config">
         <div class="input-group">
+          <label class="label-title">Header Kicker</label>
+          <input type="text" class="input-text" id="kicker" value="${this._config.kicker || 'RACE CONTROL FEED'}" placeholder="RACE CONTROL FEED">
+        </div>
+        <div class="input-group">
           <label class="label-title">Card Header Title</label>
           <input type="text" class="input-text" id="title" value="${this._config.title || ''}" placeholder="LIVE RACE CONTROL TICKER">
         </div>
@@ -1342,6 +1474,7 @@ class F1TickerCardEditor extends HTMLElement {
   _valueChanged() {
     if (!this._config) return;
     const newConfig = Object.assign({}, this._config, {
+      kicker: this.querySelector('#kicker').value,
       title: this.querySelector('#title').value,
       subtitle: this.querySelector('#subtitle').value,
       speed: parseInt(this.querySelector('#speed').value, 10) || 35,
@@ -1381,7 +1514,7 @@ if (!customElements.get('f1-ticker-card')) {
     preview: true,
   });
   console.info(
-    '%c F1-TICKER-CARD %c v1.9.0 ',
+    '%c F1-TICKER-CARD %c v2.0.0 ',
     'color: white; background: #e10600; font-weight: 700;',
     'color: #040711; background: #38bdf8; font-weight: 700;'
   );
