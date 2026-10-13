@@ -295,6 +295,11 @@ class F1TickerCard extends HTMLElement {
         letter-spacing: 0.04em;
       }
 
+      .wh-subtitle:empty,
+      .wh-kicker:empty {
+        display: none;
+      }
+
       /* Standardized Weekend Hub Status Badge (.wh-live-badge) */
       .wh-live-badge {
         display: inline-flex;
@@ -555,7 +560,7 @@ class F1TickerCard extends HTMLElement {
             <div>
               <div class="wh-kicker" id="kicker-text">${this._config.kicker || 'RACE CONTROL FEED'}</div>
               <h2 class="wh-title" id="title-text">${this._config.title || 'LIVE RACE CONTROL TICKER'}</h2>
-              <div class="wh-subtitle" id="subtitle-text">${this._config.subtitle || 'INCIDENTS & TRACK LIMITS'}</div>
+              <div class="wh-subtitle" id="subtitle-text">${this._config.subtitle !== undefined && this._config.subtitle !== null ? this._config.subtitle : 'INCIDENTS & TRACK LIMITS'}</div>
             </div>
             <div class="wh-live-badge before" id="status-pill">
               <span class="wh-live-dot"></span>
@@ -1080,12 +1085,14 @@ class F1TickerCard extends HTMLElement {
       titleEl.textContent = this._config.title || 'LIVE RACE CONTROL TICKER';
     }
     const subtitleEl = this.shadowRoot.getElementById('subtitle-text');
-    if (subtitleEl && subtitleEl.textContent !== (this._config.subtitle || 'INCIDENTS & TRACK LIMITS')) {
-      subtitleEl.textContent = this._config.subtitle || 'INCIDENTS & TRACK LIMITS';
+    const subText = this._config.subtitle !== undefined && this._config.subtitle !== null ? this._config.subtitle : 'INCIDENTS & TRACK LIMITS';
+    if (subtitleEl && subtitleEl.textContent !== subText) {
+      subtitleEl.textContent = subText;
     }
     const kickerEl = this.shadowRoot.getElementById('kicker-text');
-    if (kickerEl && kickerEl.textContent !== (this._config.kicker || 'RACE CONTROL FEED')) {
-      kickerEl.textContent = this._config.kicker || 'RACE CONTROL FEED';
+    const kickText = this._config.kicker !== undefined && this._config.kicker !== null ? this._config.kicker : 'RACE CONTROL FEED';
+    if (kickerEl && kickerEl.textContent !== kickText) {
+      kickerEl.textContent = kickText;
     }
 
     const statusPill = this.shadowRoot.getElementById('status-pill');
