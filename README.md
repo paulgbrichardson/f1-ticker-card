@@ -1,5 +1,7 @@
 # F1 Race Control Ticker Card (`custom:f1-ticker-card`)
 
+> Vibe coded with Antigravity.  Code has been reviewed and could probably be refactored in places.  Tested on both desktop and mobile app, happy for feedback and issues
+
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/default)
 [![version](https://img.shields.io/badge/version-2.2.0-e10600.svg)](https://github.com/paulgbrichardson/f1-ticker-card)
 [![license](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
