@@ -1,6 +1,6 @@
 /**
  * F1 Live Race Control Ticker Card (f1-ticker-card)
- * Version: 2.2.0
+ * Version: 2.2.1
  * 
  * Hardware-accelerated continuous 60fps single-message conveyor ticker.
  * Fully unified with the Nicxe/f1_sensor Weekend Hub design language:
@@ -23,7 +23,10 @@ async function ensureF1Fonts() {
 
   // 1. Injected @font-face definition from f1_sensor bundle
   try {
-    const res = await fetch('/local/f1-sensor-live-data-card/f1-sensor-live-data-card.js');
+    let res = await fetch('/local/f1-sensor-live-data-card/f1-sensor-live-data-card.js');
+    if (!res.ok) {
+      res = await fetch('/hacsfiles/f1-sensor-live-data-card/f1-sensor-live-data-card.js');
+    }
     if (res.ok) {
       const text = await res.text();
       const start = text.indexOf('@font-face');
@@ -45,12 +48,13 @@ async function ensureF1Fonts() {
 
   // 2. Fallback to F1 Barlow Condensed and Google Fonts
   const fontUrl = '/local/f1-sensor-live-data-card/fonts/barlow-condensed-latin-700-normal.woff2';
+  const hacsFontUrl = '/hacsfiles/f1-sensor-live-data-card/fonts/barlow-condensed-latin-700-normal.woff2';
   const fallbackStyle = document.createElement('style');
   fallbackStyle.setAttribute('data-f1-fonts', 'true');
   fallbackStyle.textContent = `
     @font-face {
       font-family: 'F1 Barlow Condensed';
-      src: url('${fontUrl}') format('woff2');
+      src: url('${fontUrl}') format('woff2'), url('${hacsFontUrl}') format('woff2');
       font-weight: 100 900;
       font-style: normal;
       font-display: swap;
@@ -139,6 +143,7 @@ class F1TickerCard extends HTMLElement {
       next_race_entity: 'sensor.f1_next_race',
       replay_mode_entity: 'input_boolean.f1_replay_mode',
       replay_status_entity: 'sensor.f1_replay_status',
+      replay_player_entity: 'media_player.f1_replay_player',
       session_status_entity: 'sensor.f1_session_status',
     }, config || {});
 
@@ -654,7 +659,8 @@ class F1TickerCard extends HTMLElement {
         e.preventDefault();
         if (!this._hass) return;
         const entityId = this._config.spoiler_entity || 'switch.f1_no_spoiler_mode';
-        this._hass.callService('switch', 'toggle', { entity_id: entityId });
+        const domain = entityId.split('.')[0] || 'switch';
+        this._hass.callService(domain, 'toggle', { entity_id: entityId });
       });
     }
 
@@ -879,7 +885,7 @@ class F1TickerCard extends HTMLElement {
     const lapCount = this._hass.states[this._config.lap_count_entity];
     const replayMode = this._hass.states[this._config.replay_mode_entity] || this._hass.states['input_boolean.f1_replay_mode'];
     const replayStatus = this._hass.states[this._config.replay_status_entity] || this._hass.states['sensor.f1_replay_status'];
-    const replayPlayer = this._hass.states['media_player.f1_replay_player'];
+    const replayPlayer = this._hass.states[this._config.replay_player_entity] || this._hass.states['media_player.f1_replay_player'];
     const sessionStatus = this._hass.states[this._config.session_status_entity] || this._hass.states['sensor.f1_session_status'];
 
     const isAvailable = (s) => s && s.state !== 'unavailable' && s.state !== 'unknown';
@@ -1742,7 +1748,7 @@ if (!customElements.get('f1-ticker-card')) {
     preview: true,
   });
   console.info(
-    '%c F1-TICKER-CARD %c v2.2.0 ',
+    '%c F1-TICKER-CARD %c v2.2.1 ',
     'color: white; background: #e10600; font-weight: 700;',
     'color: #040711; background: #38bdf8; font-weight: 700;'
   );
