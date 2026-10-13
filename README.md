@@ -1,7 +1,7 @@
 # F1 Race Control Ticker Card (`custom:f1-ticker-card`)
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/default)
-[![version](https://img.shields.io/badge/version-2.1.0-e10600.svg)](https://github.com)
+[![version](https://img.shields.io/badge/version-2.2.0-e10600.svg)](https://github.com/paulgbrichardson/f1-ticker-card)
 [![license](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.1%2B-blue.svg)](https://www.home-assistant.io)
 
@@ -51,7 +51,7 @@ Designed specifically to match the official **Formula 1 Weekend Hub / Pit Wall**
 2. Click the three dots menu (**⋮**) in the top right corner and choose **Custom repositories**.
 3. Paste the repository URL:
    ```text
-   https://github.com/<your-username>/f1-ticker-card
+   https://github.com/paulgbrichardson/f1-ticker-card
    ```
 4. Select Category: **Dashboard** (or **Lovelace**).
 5. Click **Add**, find **F1 Race Control Ticker Card**, and click **Download**.
